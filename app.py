@@ -34,8 +34,7 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     if user_id in aguardando_cupom:
-
-        ofertas[user_id]["cupom"] = update.message.text
+    ofertas[user_id]["cupom"] = update.message.text
 
         del aguardando_cupom[user_id]
 
