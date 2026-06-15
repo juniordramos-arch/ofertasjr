@@ -120,6 +120,7 @@ async def main():
     )
 
     print("BOT OFERTAS JR ONLINE")
+    print("VERSAO_2_BOTOES_ATIVA")
 
     await app.initialize()
     await app.start()
