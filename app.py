@@ -17,6 +17,11 @@ from telegram.ext import (
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHANEL_ID = os.getenv("CHANEL_ID")
+
+ofertas = {}
+aguardando_cupom = {}
+aguardando_texto = {}
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
