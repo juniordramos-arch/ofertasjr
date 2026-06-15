@@ -1,0 +1,1 @@
+print("BOT OFERTAS JR INICIADO")
