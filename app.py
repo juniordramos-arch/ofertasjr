@@ -29,22 +29,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🚀 Bot Ofertas JR Online!\n\nEnvie um link."
     )
 
-
 async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
 
-if user_id in aguardando_cupom:
+    if user_id in aguardando_cupom:
 
-    ofertas[user_id]["cupom"] = update.message.text
+        ofertas[user_id]["cupom"] = update.message.text
 
-    del aguardando_cupom[user_id]
+        del aguardando_cupom[user_id]
 
-    await update.message.reply_text(
-        f"✅ Cupom salvo:\n\n🎟 {update.message.text}"
-    )
+        await update.message.reply_text(
+            f"✅ Cupom salvo:\n\n🎟 {update.message.text}"
+        )
 
-    return
+        return
     
     link = update.message.text
     user_id = update.effective_user.id
