@@ -97,9 +97,14 @@ async def button_click(
         )
 
     elif query.data == "cupom":
-        await query.edit_message_text(
-            "🎟 Função de cupom será adicionada na próxima versão."
-        )
+
+    user_id = query.from_user.id
+
+    aguardando_cupom[user_id] = True
+
+    await query.edit_message_text(
+        "🎟 Digite o cupom que deseja usar:"
+    )
 
     elif query.data == "cancelar":
         await query.edit_message_text(
