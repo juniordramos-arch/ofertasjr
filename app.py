@@ -33,6 +33,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     link = update.message.text
+    user_id = update.effective_user.id
+
+ofertas[user_id] = {
+    "link": link,
+    "cupom": "Nenhum",
+    "texto": "Produto"
+}
 
     keyboard = [
         [
