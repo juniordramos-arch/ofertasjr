@@ -29,29 +29,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🚀 Bot Ofertas JR Online!\n\nEnvie um link."
     )
 
+
 async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
 
     if user_id in aguardando_cupom:
-    ofertas[user_id]["cupom"] = update.message.text
+
+        ofertas[user_id]["cupom"] = update.message.text
 
         del aguardando_cupom[user_id]
 
         await update.message.reply_text(
-            f"✅ Cupom salvo:\n\n🎟 {update.message.text}"
+            f"✅ Cupom salvo!\n\n🎟 {update.message.text}"
         )
 
         return
-    
-    link = update.message.text
-    user_id = update.effective_user.id
 
-ofertas[user_id] = {
-    "link": link,
-    "cupom": "Nenhum",
-    "texto": "Produto"
-}
+    link = update.message.text
+
+    ofertas[user_id] = {
+        "link": link,
+        "cupom": "Nenhum",
+        "texto": "Produto"
+    }
 
     keyboard = [
         [
@@ -104,21 +105,23 @@ async def button_click(
     await query.answer()
 
     if query.data == "publicar":
+
         await query.edit_message_text(
             "✅ Oferta aprovada!\n\nEm breve será enviada ao canal."
         )
 
     elif query.data == "cupom":
 
-    user_id = query.from_user.id
+        user_id = query.from_user.id
 
-    aguardando_cupom[user_id] = True
+        aguardando_cupom[user_id] = True
 
-    await query.edit_message_text(
-        "🎟 Digite o cupom que deseja usar:"
-    )
+        await query.edit_message_text(
+            "🎟 Digite o cupom que deseja usar:"
+        )
 
     elif query.data == "cancelar":
+
         await query.edit_message_text(
             "❌ Oferta cancelada."
         )
