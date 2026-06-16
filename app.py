@@ -1,5 +1,8 @@
 import os
 import asyncio
+from threading import Thread
+
+from flask import Flask
 
 from telegram import (
     Update,
@@ -23,6 +26,25 @@ ofertas = {}
 aguardando_cupom = {}
 aguardando_texto = {}
 
+# =========================
+# SERVIDOR WEB PARA RENDER
+# =========================
+
+web_app = Flask(__name__)
+
+@web_app.route("/")
+def home():
+    return "Bot Ofertas JR Online"
+
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    web_app.run(host="0.0.0.0", port=port)
+
+
+# =========================
+# TELEGRAM
+# =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -150,7 +172,7 @@ async def button_click(
         )
 
 
-async def main():
+async def telegram_bot():
 
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -175,7 +197,7 @@ async def main():
     )
 
     print("BOT OFERTAS JR ONLINE")
-    print("VERSAO_3_PUBLICACAO_CANAL")
+    print("VERSAO_4_RENDER")
 
     await app.initialize()
     await app.start()
@@ -186,4 +208,12 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+
+    Thread(
+        target=run_web,
+        daemon=True
+    ).start()
+
+    asyncio.run(
+        telegram_bot()
+    )
