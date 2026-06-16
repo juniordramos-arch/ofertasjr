@@ -106,9 +106,32 @@ async def button_click(
 
     if query.data == "publicar":
 
+    user_id = query.from_user.id
+
+    oferta = ofertas.get(user_id)
+
+    if not oferta:
         await query.edit_message_text(
-            "✅ Oferta aprovada!\n\nEm breve será enviada ao canal."
+            "❌ Oferta não encontrada."
         )
+        return
+
+    mensagem = f"""
+🔥 OFERTA APROVADA
+
+🔗 {oferta['link']}
+
+🎟 Cupom: {oferta['cupom']}
+"""
+
+    await context.bot.send_message(
+        chat_id=CHANEL_ID,
+        text=mensagem
+    )
+
+    await query.edit_message_text(
+        "✅ Oferta publicada no canal!"
+    )
 
     elif query.data == "cupom":
 
