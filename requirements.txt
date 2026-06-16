@@ -4,3 +4,4 @@ beautifulsoup4
 pillow
 python-dotenv
 python-telegram-bot[job-queue]
+flask
