@@ -106,17 +106,17 @@ async def button_click(
 
     if query.data == "publicar":
 
-    user_id = query.from_user.id
+        user_id = query.from_user.id
 
-    oferta = ofertas.get(user_id)
+        oferta = ofertas.get(user_id)
 
-    if not oferta:
-        await query.edit_message_text(
-            "❌ Oferta não encontrada."
-        )
-        return
+        if not oferta:
+            await query.edit_message_text(
+                "❌ Oferta não encontrada."
+            )
+            return
 
-    mensagem = f"""
+        mensagem = f"""
 🔥 OFERTA APROVADA
 
 🔗 {oferta['link']}
@@ -124,14 +124,14 @@ async def button_click(
 🎟 Cupom: {oferta['cupom']}
 """
 
-    await context.bot.send_message(
-        chat_id=CHANEL_ID,
-        text=mensagem
-    )
+        await context.bot.send_message(
+            chat_id=CHANEL_ID,
+            text=mensagem
+        )
 
-    await query.edit_message_text(
-        "✅ Oferta publicada no canal!"
-    )
+        await query.edit_message_text(
+            "✅ Oferta publicada no canal!"
+        )
 
     elif query.data == "cupom":
 
@@ -175,7 +175,7 @@ async def main():
     )
 
     print("BOT OFERTAS JR ONLINE")
-    print("VERSAO_2_BOTOES_ATIVA")
+    print("VERSAO_3_PUBLICACAO_CANAL")
 
     await app.initialize()
     await app.start()
