@@ -4,7 +4,12 @@ from threading import Thread
 
 from flask import Flask
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+Update,
+InlineKeyboardButton,
+InlineKeyboardMarkup,
+)
+
 from telegram.ext import (
 Application,
 CommandHandler,
@@ -20,35 +25,38 @@ CHANEL_ID = os.getenv("CHANEL_ID")
 ofertas = {}
 aguardando_cupom = {}
 
-==========================
+# =========================
 
-FLASK
+# SERVIDOR WEB PARA RENDER
 
-==========================
+# =========================
 
 web_app = Flask(name)
 
 @web_app.route("/")
 def home():
-return "Bot Ofertas JR Online ATIVO"
+return "Bot Ofertas JR Online Online"
 
 def run_web():
 port = int(os.environ.get("PORT", 10000))
-web_app.run(
-host="0.0.0.0",
-port=port
-)
+web_app.run(host="0.0.0.0", port=port)
 
-==========================
+# =========================
 
-TELEGRAM
+# COMANDO START
 
-==========================
+# =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 await update.message.reply_text(
 "🚀 Bot Ofertas JR Online!\n\nEnvie um link."
 )
+
+# =========================
+
+# RECEBER LINK
+
+# =========================
 
 async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -70,7 +78,8 @@ link = update.message.text
 
 ofertas[user_id] = {
     "link": link,
-    "cupom": "Nenhum"
+    "cupom": "Nenhum",
+    "texto": "Produto"
 }
 
 keyboard = [
@@ -94,39 +103,51 @@ keyboard = [
     ]
 ]
 
+reply_markup = InlineKeyboardMarkup(keyboard)
+
 await update.message.reply_text(
     f"""
 
 🛍 PRÉVIA DA OFERTA
 
-🔗 {link}
+🔗 Link:
+{link}
 
-🎟 Cupom: Nenhum
+💰 Preço:
+A definir
+
+🎟 Cupom:
+Nenhum
+
+📢 Aguardando aprovação...
 """,
-reply_markup=InlineKeyboardMarkup(keyboard)
+reply_markup=reply_markup
 )
+
+# =========================
+
+# BOTÕES
+
+# =========================
 
 async def button_click(
 update: Update,
 context: ContextTypes.DEFAULT_TYPE
 ):
-
 query = update.callback_query
 
 await query.answer()
 
-user_id = query.from_user.id
-
 if query.data == "publicar":
+
+    user_id = query.from_user.id
 
     oferta = ofertas.get(user_id)
 
     if not oferta:
-
         await query.edit_message_text(
             "❌ Oferta não encontrada."
         )
-
         return
 
     mensagem = f"""
@@ -144,15 +165,17 @@ if query.data == "publicar":
     )
 
     await query.edit_message_text(
-        "✅ Oferta publicada!"
+        "✅ Oferta publicada no canal!"
     )
 
 elif query.data == "cupom":
 
+    user_id = query.from_user.id
+
     aguardando_cupom[user_id] = True
 
     await query.edit_message_text(
-        "🎟 Digite o cupom:"
+        "🎟 Digite o cupom que deseja usar:"
     )
 
 elif query.data == "cancelar":
@@ -161,10 +184,13 @@ elif query.data == "cancelar":
         "❌ Oferta cancelada."
     )
 
-def start_bot():
+# =========================
 
-print("BOT OFERTAS JR ONLINE")
-print("VERSAO_5_RENDER")
+# TELEGRAM
+
+# =========================
+
+async def telegram_bot():
 
 app = Application.builder().token(BOT_TOKEN).build()
 
@@ -188,7 +214,16 @@ app.add_handler(
     )
 )
 
-app.run_polling()
+print("BOT OFERTAS JR ONLINE")
+print("VERSAO_RENDER")
+
+await app.initialize()
+await app.start()
+
+await app.updater.start_polling()
+
+while True:
+    await asyncio.sleep(3600)
 
 if name == "main":
 
@@ -197,4 +232,6 @@ Thread(
     daemon=True
 ).start()
 
-start_bot()
+asyncio.run(
+    telegram_bot()
+)
