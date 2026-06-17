@@ -35,28 +35,56 @@ aguardando_cupom = {}
 
 def gerar_link_afiliado(link: str):
 
-    try:
-        if not AWIN_API_TOKEN:
-            return link
+```
+try:
 
-        url = "https://api.awin.com/deeplink"
-
-        headers = {
-            "Authorization": f"Bearer {AWIN_API_TOKEN}",
-            "Content-Type": "application/json"
-        }
-
-        payload = {"destination": link}
-
-        r = requests.post(url, json=payload, headers=headers, timeout=10)
-
-        if r.status_code == 200:
-            return r.json().get("url", link)
-
+    if not AWIN_API_TOKEN:
+        print("ERRO: TOKEN AWIN NÃO ENCONTRADO")
         return link
 
-    except:
-        return link
+    print("TESTANDO AWIN...")
+    print("LINK:", link)
+
+    url = f"https://api.awin.com/publishers/1492066/linkbuilder/generate"
+
+    headers = {
+        "Authorization": f"Bearer {AWIN_API_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "advertiserId": 79926,
+        "destinationUrl": link,
+        "shorten": True
+    }
+
+    r = requests.post(
+        url,
+        json=payload,
+        headers=headers,
+        timeout=20
+    )
+
+    print("STATUS:", r.status_code)
+    print("RESPOSTA:", r.text)
+
+    if r.status_code == 200:
+
+        data = r.json()
+
+        if "shortUrl" in data:
+            return data["shortUrl"]
+
+        if "url" in data:
+            return data["url"]
+
+    return link
+
+except Exception as e:
+
+    print("ERRO AWIN:", str(e))
+    return link
+```
 
 
 # =========================
