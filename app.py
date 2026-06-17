@@ -249,7 +249,23 @@ async def telegram_bot():
         await asyncio.sleep(3600)
 
 
+import time
+
 if __name__ == "__main__":
 
     Thread(target=run_web, daemon=True).start()
-    asyncio.run(telegram_bot())
+
+    while True:
+
+        try:
+
+            print("🚀 INICIANDO BOT...")
+
+            asyncio.run(telegram_bot())
+
+        except Exception as e:
+
+            print("❌ ERRO:", str(e))
+            print("🔄 REINICIANDO EM 10 SEGUNDOS...")
+
+            time.sleep(10)
