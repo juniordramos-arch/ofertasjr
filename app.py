@@ -2,6 +2,7 @@ import os
 import asyncio
 import requests
 from threading import Thread
+from urllib.parse import urlparse
 
 from flask import Flask
 
@@ -22,23 +23,17 @@ from telegram.ext import (
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANEL_ID = os.getenv("CHANEL_ID")
-
-# 🔑 AWIN CONFIG (NOVO)
 AWIN_API_TOKEN = os.getenv("AWIN_API_TOKEN")
 
 ofertas = {}
 aguardando_cupom = {}
 
+
 # =========================
-# FUNÇÃO AWIN (NOVA)
+# AWIN LINK CONVERTER
 # =========================
 
 def gerar_link_afiliado(link: str):
-
-    """
-    Tenta converter link usando API da Awin.
-    Se falhar, retorna o link original.
-    """
 
     try:
         if not AWIN_API_TOKEN:
@@ -51,15 +46,12 @@ def gerar_link_afiliado(link: str):
             "Content-Type": "application/json"
         }
 
-        payload = {
-            "destination": link
-        }
+        payload = {"destination": link}
 
-        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        r = requests.post(url, json=payload, headers=headers, timeout=10)
 
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("url", link)
+        if r.status_code == 200:
+            return r.json().get("url", link)
 
         return link
 
@@ -68,14 +60,32 @@ def gerar_link_afiliado(link: str):
 
 
 # =========================
-# SERVIDOR WEB
+# GERADOR DE TÍTULO (PRO)
+# =========================
+
+def gerar_titulo(link: str):
+
+    try:
+        path = urlparse(link).path
+        slug = path.split("/")[-1]
+
+        titulo = slug.replace("-", " ").replace("_", " ")
+
+        return titulo.title() if titulo else "Produto em Oferta"
+
+    except:
+        return "Produto em Oferta"
+
+
+# =========================
+# FLASK
 # =========================
 
 web_app = Flask(__name__)
 
 @web_app.route("/")
 def home():
-    return "Bot Ofertas JR Online Online"
+    return "Bot Ofertas JR PRO ONLINE"
 
 
 def run_web():
@@ -89,7 +99,7 @@ def run_web():
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🚀 Bot Ofertas JR Online!\n\nEnvie um link."
+        "🚀 Bot Ofertas JR PRO!\n\nEnvie um link."
     )
 
 
@@ -100,59 +110,48 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
-    link = update.message.text
+    link_original = update.message.text
 
-    # 🔥 NOVO: converter link via Awin
-    link_afiliado = gerar_link_afiliado(link)
+    # 🔥 AWIN
+    link_afiliado = gerar_link_afiliado(link_original)
+
+    titulo = gerar_titulo(link_original)
 
     if user_id in aguardando_cupom:
 
         ofertas[user_id]["cupom"] = update.message.text
-
         del aguardando_cupom[user_id]
 
         await update.message.reply_text(
-            f"✅ Cupom salvo!\n\n🎟 {update.message.text}"
+            f"✅ Cupom salvo!\n🎟 {update.message.text}"
         )
-
         return
 
     ofertas[user_id] = {
         "link": link_afiliado,
-        "cupom": "Nenhum",
-        "texto": "Produto"
+        "titulo": titulo,
+        "cupom": "Nenhum"
     }
 
     keyboard = [
-        [
-            InlineKeyboardButton("✅ Publicar", callback_data="publicar")
-        ],
-        [
-            InlineKeyboardButton("🎟 Editar Cupom", callback_data="cupom")
-        ],
-        [
-            InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")
-        ]
+        [InlineKeyboardButton("✅ Publicar", callback_data="publicar")],
+        [InlineKeyboardButton("🎟 Editar Cupom", callback_data="cupom")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")]
     ]
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
         f"""
-🛍 PRÉVIA DA OFERTA
+🔥 PRÉVIA PRO
 
-🔗 Link:
-{link_afiliado}
+🏷 {titulo}
 
-💰 Preço:
-A definir
+🔗 {link_afiliado}
 
-🎟 Cupom:
-Nenhum
+🎟 Cupom: Nenhum
 
-📢 Aguardando aprovação...
+⚡ Pronto para publicar
 """,
-        reply_markup=reply_markup
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
@@ -165,21 +164,25 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if query.data == "publicar":
+    user_id = query.from_user.id
+    oferta = ofertas.get(user_id)
 
-        user_id = query.from_user.id
-        oferta = ofertas.get(user_id)
+    if query.data == "publicar":
 
         if not oferta:
             await query.edit_message_text("❌ Oferta não encontrada.")
             return
 
         mensagem = f"""
-🔥 OFERTA APROVADA
+🔥 OFERTA IMPERDÍVEL
+
+🏷 Produto: {oferta['titulo']}
 
 🔗 {oferta['link']}
 
 🎟 Cupom: {oferta['cupom']}
+
+⚡ Garanta agora!
 """
 
         await context.bot.send_message(
@@ -187,20 +190,16 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=mensagem
         )
 
-        await query.edit_message_text("✅ Oferta publicada no canal!")
+        await query.edit_message_text("✅ Publicado com sucesso!")
 
     elif query.data == "cupom":
 
-        user_id = query.from_user.id
         aguardando_cupom[user_id] = True
-
-        await query.edit_message_text(
-            "🎟 Digite o cupom que deseja usar:"
-        )
+        await query.edit_message_text("🎟 Envie o cupom agora:")
 
     elif query.data == "cancelar":
 
-        await query.edit_message_text("❌ Oferta cancelada.")
+        await query.edit_message_text("❌ Cancelado.")
 
 
 # =========================
@@ -215,8 +214,7 @@ async def telegram_bot():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link))
     app.add_handler(CallbackQueryHandler(button_click))
 
-    print("BOT OFERTAS JR ONLINE")
-    print("VERSAO_RENDER + AWIN")
+    print("🚀 BOT OFERTAS JR PRO ONLINE")
 
     await app.initialize()
     await app.start()
