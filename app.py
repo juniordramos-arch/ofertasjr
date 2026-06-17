@@ -35,7 +35,6 @@ aguardando_cupom = {}
 
 def gerar_link_afiliado(link: str):
 
-```
 try:
 
     if not AWIN_API_TOKEN:
@@ -84,7 +83,6 @@ except Exception as e:
 
     print("ERRO AWIN:", str(e))
     return link
-```
 
 
 # =========================
