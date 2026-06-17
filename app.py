@@ -1,5 +1,6 @@
 import os
 import asyncio
+import requests
 from threading import Thread
 
 from flask import Flask
@@ -22,19 +23,59 @@ from telegram.ext import (
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANEL_ID = os.getenv("CHANEL_ID")
 
+# 🔑 AWIN CONFIG (NOVO)
+AWIN_API_TOKEN = os.getenv("AWIN_API_TOKEN")
+
 ofertas = {}
 aguardando_cupom = {}
 
 # =========================
-# SERVIDOR WEB PARA RENDER
+# FUNÇÃO AWIN (NOVA)
+# =========================
+
+def gerar_link_afiliado(link: str):
+
+    """
+    Tenta converter link usando API da Awin.
+    Se falhar, retorna o link original.
+    """
+
+    try:
+        if not AWIN_API_TOKEN:
+            return link
+
+        url = "https://api.awin.com/deeplink"
+
+        headers = {
+            "Authorization": f"Bearer {AWIN_API_TOKEN}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "destination": link
+        }
+
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("url", link)
+
+        return link
+
+    except:
+        return link
+
+
+# =========================
+# SERVIDOR WEB
 # =========================
 
 web_app = Flask(__name__)
 
-
 @web_app.route("/")
 def home():
-    return "Bot Ofertas JR Online"
+    return "Bot Ofertas JR Online Online"
 
 
 def run_web():
@@ -43,7 +84,7 @@ def run_web():
 
 
 # =========================
-# COMANDO START
+# START
 # =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -59,6 +100,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
+    link = update.message.text
+
+    # 🔥 NOVO: converter link via Awin
+    link_afiliado = gerar_link_afiliado(link)
 
     if user_id in aguardando_cupom:
 
@@ -72,32 +117,21 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-    link = update.message.text
-
     ofertas[user_id] = {
-        "link": link,
+        "link": link_afiliado,
         "cupom": "Nenhum",
         "texto": "Produto"
     }
 
     keyboard = [
         [
-            InlineKeyboardButton(
-                "✅ Publicar",
-                callback_data="publicar"
-            )
+            InlineKeyboardButton("✅ Publicar", callback_data="publicar")
         ],
         [
-            InlineKeyboardButton(
-                "🎟 Editar Cupom",
-                callback_data="cupom"
-            )
+            InlineKeyboardButton("🎟 Editar Cupom", callback_data="cupom")
         ],
         [
-            InlineKeyboardButton(
-                "❌ Cancelar",
-                callback_data="cancelar"
-            )
+            InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")
         ]
     ]
 
@@ -108,7 +142,7 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🛍 PRÉVIA DA OFERTA
 
 🔗 Link:
-{link}
+{link_afiliado}
 
 💰 Preço:
 A definir
@@ -126,25 +160,18 @@ Nenhum
 # BOTÕES
 # =========================
 
-async def button_click(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.callback_query
-
     await query.answer()
 
     if query.data == "publicar":
 
         user_id = query.from_user.id
-
         oferta = ofertas.get(user_id)
 
         if not oferta:
-            await query.edit_message_text(
-                "❌ Oferta não encontrada."
-            )
+            await query.edit_message_text("❌ Oferta não encontrada.")
             return
 
         mensagem = f"""
@@ -160,14 +187,11 @@ async def button_click(
             text=mensagem
         )
 
-        await query.edit_message_text(
-            "✅ Oferta publicada no canal!"
-        )
+        await query.edit_message_text("✅ Oferta publicada no canal!")
 
     elif query.data == "cupom":
 
         user_id = query.from_user.id
-
         aguardando_cupom[user_id] = True
 
         await query.edit_message_text(
@@ -176,45 +200,26 @@ async def button_click(
 
     elif query.data == "cancelar":
 
-        await query.edit_message_text(
-            "❌ Oferta cancelada."
-        )
+        await query.edit_message_text("❌ Oferta cancelada.")
 
 
 # =========================
-# TELEGRAM
+# BOT
 # =========================
 
 async def telegram_bot():
 
     app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(
-        CommandHandler(
-            "start",
-            start
-        )
-    )
-
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            receive_link
-        )
-    )
-
-    app.add_handler(
-        CallbackQueryHandler(
-            button_click
-        )
-    )
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link))
+    app.add_handler(CallbackQueryHandler(button_click))
 
     print("BOT OFERTAS JR ONLINE")
-    print("VERSAO_RENDER")
+    print("VERSAO_RENDER + AWIN")
 
     await app.initialize()
     await app.start()
-
     await app.updater.start_polling()
 
     while True:
@@ -223,11 +228,5 @@ async def telegram_bot():
 
 if __name__ == "__main__":
 
-    Thread(
-        target=run_web,
-        daemon=True
-    ).start()
-
-    asyncio.run(
-        telegram_bot()
-    )
+    Thread(target=run_web, daemon=True).start()
+    asyncio.run(telegram_bot())
