@@ -21,16 +21,62 @@ from telegram.ext import (
     filters,
 )
 
+# =========================
+# CONFIG ENV (RENDER)
+# =========================
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANEL_ID = os.getenv("CHANEL_ID")
 AWIN_API_TOKEN = os.getenv("AWIN_API_TOKEN")
+AWIN_PUBLISHER_ID = os.getenv("AWIN_PUBLISHER_ID")
+
+# =========================
+# MEMÓRIA LOCAL
+# =========================
 
 ofertas = {}
 aguardando_cupom = {}
 
+# =========================
+# AWIN ADVERTISERS (V2 CORE)
+# =========================
+
+AWIN_ADVERTISERS = {
+    "adidas.com": 79926,
+    "nike.com": 17652,
+    "mizuno.com": 51271,
+    "dafiti.com": 17697,
+    "kabum.com": 17729,
+    "futfanatics.com": 17893,
+    "olympikus.com": 17698,
+    "puma.com": 32675,
+    "cea.com": 17648,
+    "aramis.com": 121392,
+    "havaianas.com": 119883,
+    "underarmour.com": 18864,
+    "jbl.com": 118761,
+}
+# =========================
+# DETECTAR LOJA
+# =========================
+
+def detectar_advertiser(link: str):
+
+    try:
+        domain = urlparse(link).netloc.replace("www.", "")
+
+        for key in AWIN_ADVERTISERS:
+            if key in domain:
+                return AWIN_ADVERTISERS[key]
+
+        return None
+
+    except:
+        return None
+
 
 # =========================
-# AWIN LINK CONVERTER
+# GERAR LINK AFILIADO V2
 # =========================
 
 def gerar_link_afiliado(link: str):
@@ -41,10 +87,17 @@ def gerar_link_afiliado(link: str):
             print("ERRO: TOKEN AWIN NÃO ENCONTRADO")
             return link
 
-        print("TESTANDO AWIN...")
-        print("LINK:", link)
+        advertiser_id = detectar_advertiser(link)
 
-        url = f"https://api.awin.com/publishers/1492066/linkbuilder/generate"
+        if not advertiser_id:
+            print("⚠️ LOJA NÃO MAPEADA:", link)
+            return link
+
+        print("🔎 GERANDO LINK AWIN...")
+        print("LINK:", link)
+        print("ADVERTISER:", advertiser_id)
+
+        url = f"https://api.awin.com/publishers/{AWIN_PUBLISHER_ID}/linkbuilder/generate"
 
         headers = {
             "Authorization": f"Bearer {AWIN_API_TOKEN}",
@@ -52,17 +105,12 @@ def gerar_link_afiliado(link: str):
         }
 
         payload = {
-            "advertiserId": 79926,
+            "advertiserId": advertiser_id,
             "destinationUrl": link,
             "shorten": True
         }
 
-        r = requests.post(
-            url,
-            json=payload,
-            headers=headers,
-            timeout=20
-        )
+        r = requests.post(url, json=payload, headers=headers, timeout=20)
 
         print("STATUS:", r.status_code)
         print("RESPOSTA:", r.text)
@@ -71,21 +119,17 @@ def gerar_link_afiliado(link: str):
 
             data = r.json()
 
-            if "shortUrl" in data:
-                return data["shortUrl"]
-
-            if "url" in data:
-                return data["url"]
+            return data.get("shortUrl") or data.get("url") or link
 
         return link
 
     except Exception as e:
-
-        print("ERRO AWIN:", str(e))
+        print("❌ ERRO AWIN:", str(e))
         return link
-        
+
+
 # =========================
-# GERADOR DE TÍTULO (PRO)
+# GERADOR DE TÍTULO
 # =========================
 
 def gerar_titulo(link: str):
@@ -100,17 +144,15 @@ def gerar_titulo(link: str):
 
     except:
         return "Produto em Oferta"
-
-
 # =========================
-# FLASK
+# FLASK (KEEP ALIVE)
 # =========================
 
 web_app = Flask(__name__)
 
 @web_app.route("/")
 def home():
-    return "Bot Ofertas JR PRO ONLINE"
+    return "Bot Ofertas JR PRO V2 ONLINE"
 
 
 def run_web():
@@ -119,12 +161,12 @@ def run_web():
 
 
 # =========================
-# START
+# START COMMAND
 # =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🚀 Bot Ofertas JR PRO!\n\nEnvie um link."
+        "🚀 Bot Ofertas JR PRO V2 ONLINE\n\nEnvie qualquer link de produto."
     )
 
 
@@ -137,20 +179,18 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     link_original = update.message.text
 
-    # 🔥 AWIN
+    # CUPOM FLOW
+    if user_id in aguardando_cupom:
+        ofertas[user_id]["cupom"] = link_original
+        del aguardando_cupom[user_id]
+
+        await update.message.reply_text(f"✅ Cupom salvo: {link_original}")
+        return
+
+    # AWIN LINK
     link_afiliado = gerar_link_afiliado(link_original)
 
     titulo = gerar_titulo(link_original)
-
-    if user_id in aguardando_cupom:
-
-        ofertas[user_id]["cupom"] = update.message.text
-        del aguardando_cupom[user_id]
-
-        await update.message.reply_text(
-            f"✅ Cupom salvo!\n🎟 {update.message.text}"
-        )
-        return
 
     ofertas[user_id] = {
         "link": link_afiliado,
@@ -166,15 +206,13 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"""
-🔥 PRÉVIA PRO
+🔥 PRÉVIA V2
 
 🏷 {titulo}
 
 🔗 {link_afiliado}
 
 🎟 Cupom: Nenhum
-
-⚡ Pronto para publicar
 """,
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -201,13 +239,13 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mensagem = f"""
 🔥 OFERTA IMPERDÍVEL
 
-🏷 Produto: {oferta['titulo']}
+🏷 {oferta['titulo']}
 
 🔗 {oferta['link']}
 
 🎟 Cupom: {oferta['cupom']}
 
-⚡ Garanta agora!
+⚡ Compre agora!
 """
 
         await context.bot.send_message(
@@ -218,17 +256,15 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("✅ Publicado com sucesso!")
 
     elif query.data == "cupom":
-
         aguardando_cupom[user_id] = True
         await query.edit_message_text("🎟 Envie o cupom agora:")
 
     elif query.data == "cancelar":
-
         await query.edit_message_text("❌ Cancelado.")
 
 
 # =========================
-# BOT
+# TELEGRAM BOT ENGINE
 # =========================
 
 async def telegram_bot():
@@ -239,7 +275,7 @@ async def telegram_bot():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link))
     app.add_handler(CallbackQueryHandler(button_click))
 
-    print("🚀 BOT OFERTAS JR PRO ONLINE")
+    print("🚀 BOT OFERTAS JR PRO V2 ONLINE")
 
     await app.initialize()
     await app.start()
@@ -249,6 +285,10 @@ async def telegram_bot():
         await asyncio.sleep(3600)
 
 
+# =========================
+# MAIN (RENDER SAFE)
+# =========================
+
 import time
 
 if __name__ == "__main__":
@@ -256,16 +296,11 @@ if __name__ == "__main__":
     Thread(target=run_web, daemon=True).start()
 
     while True:
-
         try:
-
-            print("🚀 INICIANDO BOT...")
-
+            print("🚀 INICIANDO BOT V2...")
             asyncio.run(telegram_bot())
 
         except Exception as e:
-
             print("❌ ERRO:", str(e))
-            print("🔄 REINICIANDO EM 10 SEGUNDOS...")
-
+            print("🔄 RESTART EM 10s...")
             time.sleep(10)
