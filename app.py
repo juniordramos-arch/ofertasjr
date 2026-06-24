@@ -1,5 +1,5 @@
 import os
-import asyncio
+import time
 import requests
 from threading import Thread
 from urllib.parse import urlparse
@@ -23,7 +23,7 @@ from telegram.ext import (
 )
 
 # =========================
-# CONFIG ENV (RENDER)
+# CONFIG ENV
 # =========================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -39,7 +39,7 @@ ofertas = {}
 aguardando_cupom = {}
 
 # =========================
-# AWIN ADVERTISERS
+# AWIN MAP
 # =========================
 
 AWIN_ADVERTISERS = {
@@ -77,19 +77,17 @@ def detectar_advertiser(link: str):
 
 
 # =========================
-# GERAR LINK AFILIADO
+# LINK AFILIADO
 # =========================
 
 def gerar_link_afiliado(link: str):
     try:
         if not AWIN_API_TOKEN:
-            print("ERRO: TOKEN AWIN NÃO ENCONTRADO")
             return link
 
         advertiser_id = detectar_advertiser(link)
 
         if not advertiser_id:
-            print("⚠️ LOJA NÃO MAPEADA:", link)
             return link
 
         url = f"https://api.awin.com/publishers/{AWIN_PUBLISHER_ID}/linkbuilder/generate"
@@ -114,12 +112,12 @@ def gerar_link_afiliado(link: str):
         return link
 
     except Exception as e:
-        print("❌ ERRO AWIN:", str(e))
+        print("ERRO AWIN:", e)
         return link
 
 
 # =========================
-# EXTRAIR IMAGEM
+# IMAGEM
 # =========================
 
 def extrair_imagem(link):
@@ -139,13 +137,12 @@ def extrair_imagem(link):
 
         return None
 
-    except Exception as e:
-        print("ERRO IMAGEM:", str(e))
+    except:
         return None
 
 
 # =========================
-# GERAR TÍTULO
+# TÍTULO
 # =========================
 
 def gerar_titulo(link: str):
@@ -164,167 +161,4 @@ def gerar_titulo(link: str):
 # FLASK KEEP ALIVE
 # =========================
 
-web_app = Flask(__name__)
-
-@web_app.route("/")
-def home():
-    return "Bot Ofertas JR PRO V2 ONLINE"
-
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    web_app.run(host="0.0.0.0", port=port)
-
-
-# =========================
-# START
-# =========================
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🚀 Bot Ofertas JR PRO V2 ONLINE\n\nEnvie qualquer link de produto."
-    )
-
-
-# =========================
-# RECEBER LINK
-# =========================
-
-async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    user_id = update.effective_user.id
-    link_original = update.message.text
-
-    # fluxo cupom
-    if user_id in aguardando_cupom:
-        ofertas[user_id]["cupom"] = link_original
-        del aguardando_cupom[user_id]
-
-        await update.message.reply_text(f"✅ Cupom salvo: {link_original}")
-        return
-
-    link_afiliado = gerar_link_afiliado(link_original)
-    titulo = gerar_titulo(link_original)
-    imagem = extrair_imagem(link_original)
-
-    ofertas[user_id] = {
-        "link": link_afiliado,
-        "titulo": titulo,
-        "imagem": imagem,
-        "cupom": ""
-    }
-
-    keyboard = [
-        [InlineKeyboardButton("✅ Publicar", callback_data="publicar")],
-        [InlineKeyboardButton("🎟 Editar Cupom", callback_data="cupom")],
-        [InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")]
-    ]
-
-    await update.message.reply_text(
-        f"""
-🔥 PRÉVIA V2
-
-🏷 {titulo}
-
-🔗 {link_afiliado}
-
-🎟 Cupom: Nenhum
-""",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-
-# =========================
-# BOTÕES (CORRIGIDO 100%)
-# =========================
-
-async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    query = update.callback_query
-    await query.answer()
-
-    user_id = query.from_user.id
-    oferta = ofertas.get(user_id)
-
-    if query.data == "publicar":
-
-        if not oferta:
-            await query.edit_message_text("❌ Oferta não encontrada.")
-            return
-
-        mensagem = f"""
-🔥 OFERTA IMPERDÍVEL
-
-🏷 Produto: {oferta['titulo']}
-"""
-
-        if oferta.get("cupom"):
-            mensagem += f"""
-🎟 Cupom: {oferta['cupom']}
-"""
-
-        mensagem += f"""
-🔗 {oferta['link']}
-
-⚡ Garanta agora!
-"""
-
-        if oferta.get("imagem"):
-            await context.bot.send_photo(
-                chat_id=CHANEL_ID,
-                photo=oferta["imagem"],
-                caption=mensagem
-            )
-        else:
-            await context.bot.send_message(
-                chat_id=CHANEL_ID,
-                text=mensagem
-            )
-
-        await query.edit_message_text("✅ Publicado com sucesso!")
-
-    elif query.data == "cupom":
-
-        aguardando_cupom[user_id] = True
-        await query.edit_message_text("🎟 Envie o cupom agora:")
-
-    elif query.data == "cancelar":
-
-        await query.edit_message_text("❌ Cancelado.")
-
-
-# =========================
-# BOT ENGINE (CORRIGIDO)
-# =========================
-
-async def telegram_bot():
-
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link))
-    app.add_handler(CallbackQueryHandler(button_click))
-
-    print("🚀 BOT OFERTAS JR PRO V2 ONLINE")
-
-    await app.run_polling()
-
-
-# =========================
-# MAIN (RENDER SAFE)
-# =========================
-
-import time
-
-if __name__ == "__main__":
-
-    Thread(target=run_web, daemon=True).start()
-
-    while True:
-        try:
-            print("🚀 INICIANDO BOT V2...")
-            asyncio.run(telegram_bot())
-
-        except Exception as e:
-            print("❌ ERRO:", str(e))
-            print("🔄 RESTART EM 10s...")
-            time.sleep(10)
+web_app = Flask(__
