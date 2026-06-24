@@ -161,4 +161,4 @@ def gerar_titulo(link: str):
 # FLASK KEEP ALIVE
 # =========================
 
-web_app = Flask(__
+web_app = Flask(__name__)
