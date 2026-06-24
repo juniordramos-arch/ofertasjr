@@ -274,13 +274,14 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     oferta = ofertas.get(user_id)
 
-    if query.data == "publicar":
+if query.data == "publicar":
 
-        if not oferta:
-            await query.edit_message_text("❌ Oferta não encontrada.")
-            return
+if not oferta:
+    await query.edit_message_text("❌ Oferta não encontrada.")
+    return
 
-        mensagem = f"""
+mensagem = f"""
+
 🔥 OFERTA IMPERDÍVEL
 
 🏷 Produto: {oferta['titulo']}
@@ -300,7 +301,7 @@ mensagem += f"""
 ⚡ Garanta agora!
 """
 
-        if oferta.get("imagem"):
+if oferta.get("imagem"):
 
     await context.bot.send_photo(
         chat_id=CHANEL_ID,
@@ -315,7 +316,7 @@ else:
         text=mensagem
     )
 
-        await query.edit_message_text("✅ Publicado com sucesso!")
+await query.edit_message_text("✅ Publicado com sucesso!")
 
     elif query.data == "cupom":
         aguardando_cupom[user_id] = True
