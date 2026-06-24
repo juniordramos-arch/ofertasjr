@@ -276,55 +276,55 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if query.data == "publicar":
 
-if not oferta:
-    await query.edit_message_text("❌ Oferta não encontrada.")
-    return
+    if not oferta:
+        await query.edit_message_text("❌ Oferta não encontrada.")
+        return
 
-mensagem = f"""
-
+    mensagem = f"""
 🔥 OFERTA IMPERDÍVEL
 
 🏷 Produto: {oferta['titulo']}
 """
 
-if oferta["cupom"]:
+    if oferta.get("cupom"):
 
-    mensagem += f"""
+        mensagem += f"""
 
 🎟 Cupom: {oferta['cupom']}
 """
 
-mensagem += f"""
+    mensagem += f"""
 
 🔗 {oferta['link']}
 
 ⚡ Garanta agora!
 """
 
-if oferta.get("imagem"):
+    if oferta.get("imagem"):
 
-    await context.bot.send_photo(
-        chat_id=CHANEL_ID,
-        photo=oferta["imagem"],
-        caption=mensagem
-    )
+        await context.bot.send_photo(
+            chat_id=CHANEL_ID,
+            photo=oferta["imagem"],
+            caption=mensagem
+        )
 
-else:
+    else:
 
-    await context.bot.send_message(
-        chat_id=CHANEL_ID,
-        text=mensagem
-    )
+        await context.bot.send_message(
+            chat_id=CHANEL_ID,
+            text=mensagem
+        )
 
-await query.edit_message_text("✅ Publicado com sucesso!")
+    await query.edit_message_text("✅ Publicado com sucesso!")
 
-    elif query.data == "cupom":
-        aguardando_cupom[user_id] = True
-        await query.edit_message_text("🎟 Envie o cupom agora:")
+elif query.data == "cupom":
 
-    elif query.data == "cancelar":
-        await query.edit_message_text("❌ Cancelado.")
+    aguardando_cupom[user_id] = True
+    await query.edit_message_text("🎟 Envie o cupom agora:")
 
+elif query.data == "cancelar":
+
+    await query.edit_message_text("❌ Cancelado.")
 
 # =========================
 # TELEGRAM BOT ENGINE
