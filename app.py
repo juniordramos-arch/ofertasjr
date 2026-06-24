@@ -5,6 +5,7 @@ from threading import Thread
 from urllib.parse import urlparse
 
 from flask import Flask
+from bs4 import BeautifulSoup
 
 from telegram import (
     Update,
@@ -126,7 +127,46 @@ def gerar_link_afiliado(link: str):
     except Exception as e:
         print("❌ ERRO AWIN:", str(e))
         return link
+        
+# =========================
+# EXTRAIR IMAGEM PRODUTO
+# =========================
 
+def extrair_imagem(link):
+
+    try:
+
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
+
+        r = requests.get(
+            link,
+            headers=headers,
+            timeout=15
+        )
+
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        og = soup.find("meta", property="og:image")
+
+        if og and og.get("content"):
+            return og["content"]
+
+        twitter = soup.find(
+            "meta",
+            attrs={"name": "twitter:image"}
+        )
+
+        if twitter and twitter.get("content"):
+            return twitter["content"]
+
+        return None
+
+    except Exception as e:
+
+        print("ERRO IMAGEM:", str(e))
+        return None
 
 # =========================
 # GERADOR DE TÍTULO
@@ -192,12 +232,16 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     titulo = gerar_titulo(link_original)
 
-    ofertas[user_id] = {
-        "link": link_afiliado,
-        "titulo": titulo,
-        "cupom": "Nenhum"
-    }
+    imagem = extrair_imagem(link_original)
 
+    ofertas[user_id] = {
+    "link": link_afiliado,
+    "titulo": titulo,
+    "imagem": imagem,
+    "cupom": ""
+        
+    }
+    
     keyboard = [
         [InlineKeyboardButton("✅ Publicar", callback_data="publicar")],
         [InlineKeyboardButton("🎟 Editar Cupom", callback_data="cupom")],
@@ -239,19 +283,37 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mensagem = f"""
 🔥 OFERTA IMPERDÍVEL
 
-🏷 {oferta['titulo']}
+🏷 Produto: {oferta['titulo']}
+"""
+
+if oferta["cupom"]:
+
+    mensagem += f"""
+
+🎟 Cupom: {oferta['cupom']}
+"""
+
+mensagem += f"""
 
 🔗 {oferta['link']}
 
-🎟 Cupom: {oferta['cupom']}
-
-⚡ Compre agora!
+⚡ Garanta agora!
 """
 
-        await context.bot.send_message(
-            chat_id=CHANEL_ID,
-            text=mensagem
-        )
+        if oferta.get("imagem"):
+
+    await context.bot.send_photo(
+        chat_id=CHANEL_ID,
+        photo=oferta["imagem"],
+        caption=mensagem
+    )
+
+else:
+
+    await context.bot.send_message(
+        chat_id=CHANEL_ID,
+        text=mensagem
+    )
 
         await query.edit_message_text("✅ Publicado com sucesso!")
 
