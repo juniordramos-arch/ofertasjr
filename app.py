@@ -39,7 +39,7 @@ ofertas = {}
 aguardando_cupom = {}
 
 # =========================
-# AWIN ADVERTISERS (V2 CORE)
+# AWIN ADVERTISERS
 # =========================
 
 AWIN_ADVERTISERS = {
@@ -57,12 +57,12 @@ AWIN_ADVERTISERS = {
     "underarmour.com": 18864,
     "jbl.com": 118761,
 }
+
 # =========================
 # DETECTAR LOJA
 # =========================
 
 def detectar_advertiser(link: str):
-
     try:
         domain = urlparse(link).netloc.replace("www.", "")
 
@@ -77,13 +77,11 @@ def detectar_advertiser(link: str):
 
 
 # =========================
-# GERAR LINK AFILIADO V2
+# GERAR LINK AFILIADO
 # =========================
 
 def gerar_link_afiliado(link: str):
-
     try:
-
         if not AWIN_API_TOKEN:
             print("ERRO: TOKEN AWIN NÃO ENCONTRADO")
             return link
@@ -93,10 +91,6 @@ def gerar_link_afiliado(link: str):
         if not advertiser_id:
             print("⚠️ LOJA NÃO MAPEADA:", link)
             return link
-
-        print("🔎 GERANDO LINK AWIN...")
-        print("LINK:", link)
-        print("ADVERTISER:", advertiser_id)
 
         url = f"https://api.awin.com/publishers/{AWIN_PUBLISHER_ID}/linkbuilder/generate"
 
@@ -113,13 +107,8 @@ def gerar_link_afiliado(link: str):
 
         r = requests.post(url, json=payload, headers=headers, timeout=20)
 
-        print("STATUS:", r.status_code)
-        print("RESPOSTA:", r.text)
-
         if r.status_code == 200:
-
             data = r.json()
-
             return data.get("shortUrl") or data.get("url") or link
 
         return link
@@ -127,65 +116,52 @@ def gerar_link_afiliado(link: str):
     except Exception as e:
         print("❌ ERRO AWIN:", str(e))
         return link
-        
+
+
 # =========================
-# EXTRAIR IMAGEM PRODUTO
+# EXTRAIR IMAGEM
 # =========================
 
 def extrair_imagem(link):
-
     try:
+        headers = {"User-Agent": "Mozilla/5.0"}
 
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
-
-        r = requests.get(
-            link,
-            headers=headers,
-            timeout=15
-        )
-
+        r = requests.get(link, headers=headers, timeout=15)
         soup = BeautifulSoup(r.text, "html.parser")
 
         og = soup.find("meta", property="og:image")
-
         if og and og.get("content"):
             return og["content"]
 
-        twitter = soup.find(
-            "meta",
-            attrs={"name": "twitter:image"}
-        )
-
+        twitter = soup.find("meta", attrs={"name": "twitter:image"})
         if twitter and twitter.get("content"):
             return twitter["content"]
 
         return None
 
     except Exception as e:
-
         print("ERRO IMAGEM:", str(e))
         return None
 
+
 # =========================
-# GERADOR DE TÍTULO
+# GERAR TÍTULO
 # =========================
 
 def gerar_titulo(link: str):
-
     try:
         path = urlparse(link).path
         slug = path.split("/")[-1]
 
         titulo = slug.replace("-", " ").replace("_", " ")
-
         return titulo.title() if titulo else "Produto em Oferta"
 
     except:
         return "Produto em Oferta"
+
+
 # =========================
-# FLASK (KEEP ALIVE)
+# FLASK KEEP ALIVE
 # =========================
 
 web_app = Flask(__name__)
@@ -194,14 +170,13 @@ web_app = Flask(__name__)
 def home():
     return "Bot Ofertas JR PRO V2 ONLINE"
 
-
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     web_app.run(host="0.0.0.0", port=port)
 
 
 # =========================
-# START COMMAND
+# START
 # =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -219,7 +194,7 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     link_original = update.message.text
 
-    # CUPOM FLOW
+    # fluxo cupom
     if user_id in aguardando_cupom:
         ofertas[user_id]["cupom"] = link_original
         del aguardando_cupom[user_id]
@@ -227,21 +202,17 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ Cupom salvo: {link_original}")
         return
 
-    # AWIN LINK
     link_afiliado = gerar_link_afiliado(link_original)
-
     titulo = gerar_titulo(link_original)
-
     imagem = extrair_imagem(link_original)
 
     ofertas[user_id] = {
-    "link": link_afiliado,
-    "titulo": titulo,
-    "imagem": imagem,
-    "cupom": ""
-        
+        "link": link_afiliado,
+        "titulo": titulo,
+        "imagem": imagem,
+        "cupom": ""
     }
-    
+
     keyboard = [
         [InlineKeyboardButton("✅ Publicar", callback_data="publicar")],
         [InlineKeyboardButton("🎟 Editar Cupom", callback_data="cupom")],
@@ -263,10 +234,9 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# BOTÕES
+# BOTÕES (CORRIGIDO 100%)
 # =========================
 
-async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.callback_query
@@ -299,15 +269,12 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
 
         if oferta.get("imagem"):
-
             await context.bot.send_photo(
                 chat_id=CHANEL_ID,
                 photo=oferta["imagem"],
                 caption=mensagem
             )
-
         else:
-
             await context.bot.send_message(
                 chat_id=CHANEL_ID,
                 text=mensagem
@@ -324,8 +291,9 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text("❌ Cancelado.")
 
+
 # =========================
-# TELEGRAM BOT ENGINE
+# BOT ENGINE (CORRIGIDO)
 # =========================
 
 async def telegram_bot():
@@ -338,12 +306,7 @@ async def telegram_bot():
 
     print("🚀 BOT OFERTAS JR PRO V2 ONLINE")
 
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-
-    while True:
-        await asyncio.sleep(3600)
+    await app.run_polling()
 
 
 # =========================
