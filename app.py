@@ -243,6 +243,23 @@ def telegram_bot():
 # MAIN
 # =========================
 
-if __name__ == "__main__":
+if name == "main":
 
-    Thread(target=
+Thread(
+    target=run_web,
+    daemon=True
+).start()
+
+while True:
+
+    try:
+
+        print("🚀 INICIANDO BOT...")
+
+        telegram_bot()
+
+    except Exception as e:
+
+        print("ERRO:", e)
+
+        time.sleep(10)
