@@ -267,6 +267,7 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.callback_query
     await query.answer()
@@ -274,57 +275,54 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     oferta = ofertas.get(user_id)
 
-if query.data == "publicar":
+    if query.data == "publicar":
 
-    if not oferta:
-        await query.edit_message_text("❌ Oferta não encontrada.")
-        return
+        if not oferta:
+            await query.edit_message_text("❌ Oferta não encontrada.")
+            return
 
-    mensagem = f"""
+        mensagem = f"""
 🔥 OFERTA IMPERDÍVEL
 
 🏷 Produto: {oferta['titulo']}
 """
 
-    if oferta.get("cupom"):
-
-        mensagem += f"""
-
+        if oferta.get("cupom"):
+            mensagem += f"""
 🎟 Cupom: {oferta['cupom']}
 """
 
-    mensagem += f"""
-
+        mensagem += f"""
 🔗 {oferta['link']}
 
 ⚡ Garanta agora!
 """
 
-    if oferta.get("imagem"):
+        if oferta.get("imagem"):
 
-        await context.bot.send_photo(
-            chat_id=CHANEL_ID,
-            photo=oferta["imagem"],
-            caption=mensagem
-        )
+            await context.bot.send_photo(
+                chat_id=CHANEL_ID,
+                photo=oferta["imagem"],
+                caption=mensagem
+            )
 
-    else:
+        else:
 
-        await context.bot.send_message(
-            chat_id=CHANEL_ID,
-            text=mensagem
-        )
+            await context.bot.send_message(
+                chat_id=CHANEL_ID,
+                text=mensagem
+            )
 
-    await query.edit_message_text("✅ Publicado com sucesso!")
+        await query.edit_message_text("✅ Publicado com sucesso!")
 
-elif query.data == "cupom":
+    elif query.data == "cupom":
 
-    aguardando_cupom[user_id] = True
-    await query.edit_message_text("🎟 Envie o cupom agora:")
+        aguardando_cupom[user_id] = True
+        await query.edit_message_text("🎟 Envie o cupom agora:")
 
-elif query.data == "cancelar":
+    elif query.data == "cancelar":
 
-    await query.edit_message_text("❌ Cancelado.")
+        await query.edit_message_text("❌ Cancelado.")
 
 # =========================
 # TELEGRAM BOT ENGINE
