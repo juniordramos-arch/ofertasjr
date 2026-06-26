@@ -37,19 +37,17 @@ GANCHOS = [
 # =========================
 
 def validar_imagem(caminho_imagem: str):
-    """Verifica se a imagem é válida e tem tamanho adequado"""
+    """Verifica se a imagem é válida"""
     try:
         if not caminho_imagem or not os.path.exists(caminho_imagem):
             logger.error(f"❌ Arquivo não existe: {caminho_imagem}")
             return False
         
-        # Tenta abrir a imagem
         img = Image.open(caminho_imagem)
         img.verify()
         
-        # Verifica tamanho
         tamanho = os.path.getsize(caminho_imagem)
-        if tamanho < 100:  # Menos de 100 bytes = inválido
+        if tamanho < 100:
             logger.error(f"❌ Imagem muito pequena: {tamanho} bytes")
             return False
         
@@ -80,12 +78,10 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text.strip()
     
-    # Verifica se é cupom
     if user_id in aguardando_cupom:
         ofertas[user_id]["cupom"] = text
         del aguardando_cupom[user_id]
         await update.message.reply_text(f"✅ Cupom salvo: {text}")
-        
         oferta = ofertas.get(user_id)
         if oferta:
             await mostrar_previa(update, user_id, oferta)
@@ -98,7 +94,6 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         titulo_limpo = titulo.replace(".Html", "").replace(".html", "").strip()
         
-        # VALIDA A IMAGEM ANTES DE SALVAR
         imagem_valida = False
         if imagem and validar_imagem(imagem):
             imagem_valida = True
@@ -156,12 +151,8 @@ async def mostrar_previa(update: Update, user_id: int, oferta: dict):
     
     mensagem += f"🔗 {oferta['link']}"
     
-    # =========================
-    # ENVIA COM IMAGEM (SE VÁLIDA)
-    # =========================
     if oferta.get("imagem") and oferta.get("imagem_valida"):
         try:
-            # Abre a imagem para enviar
             with open(oferta["imagem"], 'rb') as foto:
                 await update.message.reply_photo(
                     foto,
@@ -171,14 +162,12 @@ async def mostrar_previa(update: Update, user_id: int, oferta: dict):
             logger.info(f"✅ Prévia com imagem enviada para {user_id}")
         except Exception as e:
             logger.error(f"❌ Erro ao enviar imagem: {e}")
-            # Fallback: envia só texto
             await update.message.reply_text(
                 mensagem,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             await update.message.reply_text("⚠️ Não foi possível carregar a imagem do produto.")
     else:
-        # Sem imagem, envia só texto
         await update.message.reply_text(
             mensagem,
             reply_markup=InlineKeyboardMarkup(keyboard)
@@ -226,9 +215,6 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             mensagem += f"🔗 {oferta['link']}"
             
-            # =========================
-            # ENVIA PARA O CANAL
-            # =========================
             if oferta.get("imagem") and oferta.get("imagem_valida"):
                 try:
                     with open(oferta["imagem"], 'rb') as foto:
@@ -245,7 +231,6 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(CHANNEL_ID, mensagem)
                 logger.info(f"✅ Oferta publicada sem imagem por {user_id}")
             
-            # Confirma para o usuário
             try:
                 await query.edit_message_text("✅ Publicado com sucesso!")
             except:
