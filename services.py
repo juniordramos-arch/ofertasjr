@@ -33,6 +33,24 @@ AWIN_ADVERTISERS = {
 }
 
 # =========================
+# HEADERS AVANÇADOS (IMITAM NAVEGADOR REAL)
+# =========================
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Cache-Control": "max-age=0",
+}
+
+# =========================
 # FUNÇÃO: DETECTAR ADVERTISER
 # =========================
 
@@ -110,12 +128,32 @@ def gerar_titulo(link: str):
         return "Produto"
 
 # =========================
-# FUNÇÃO: EXTRAIR PREÇO
+# FUNÇÃO: EXTRAIR PREÇO (DO SITE)
 # =========================
 
 def extrair_preco(link: str):
-    """Extrai preço usando fallback por domínio"""
+    """Extrai preço diretamente do site"""
     try:
+        response = requests.get(link, headers=HEADERS, timeout=15)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            # Busca padrões de preço no HTML
+            padroes = [
+                r'R\$\s*[\d.,]+',
+                r'R\$\s*[\d.,]+\s*[\d.,]+',
+                r'de\s*R\$\s*[\d.,]+\s*por\s*R\$\s*[\d.,]+',
+                r'~R\$\s*[\d.,]+~',
+            ]
+            
+            for padrao in padroes:
+                match = re.search(padrao, response.text, re.IGNORECASE)
+                if match:
+                    preco = match.group(0)
+                    logger.info(f"💰 Preço encontrado: {preco}")
+                    return preco
+        
+        # Fallback por domínio
         dominio = urlparse(link).netloc.replace("www.", "").split(".")[0].lower()
         precos_fallback = {
             "nike": "R$ 599,99",
@@ -134,18 +172,42 @@ def extrair_preco(link: str):
             if key in dominio:
                 logger.info(f"💰 Preço: {value}")
                 return value
+        
+        return None
+        
     except Exception as e:
-        logger.warning(f"⚠️ Falha no fallback de preço: {e}")
-    
-    return None
+        logger.error(f"❌ Erro ao extrair preço: {e}")
+        return None
 
 # =========================
-# FUNÇÃO: EXTRAIR BENEFÍCIO
+# FUNÇÃO: EXTRAIR BENEFÍCIO (DO SITE)
 # =========================
 
 def extrair_beneficio(link: str):
-    """Extrai benefício usando fallback por domínio"""
+    """Extrai benefício diretamente do site"""
     try:
+        response = requests.get(link, headers=HEADERS, timeout=15)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            # Tenta encontrar descrição
+            descricao = soup.find("meta", {"name": "description"})
+            if descricao and descricao.get("content"):
+                beneficio = descricao["content"][:100]
+                logger.info(f"🎯 Benefício: {beneficio[:50]}...")
+                return beneficio
+            
+            # Tenta encontrar no texto
+            texto = soup.get_text()
+            frases = texto.split(".")
+            for frase in frases:
+                if "pra" in frase or "para" in frase or "com" in frase:
+                    if len(frase) > 20 and len(frase) < 100:
+                        beneficio = frase.strip()
+                        logger.info(f"🎯 Benefício: {beneficio[:50]}...")
+                        return beneficio
+        
+        # Fallback por domínio
         dominio = urlparse(link).netloc.replace("www.", "").split(".")[0].lower()
         beneficios_fallback = {
             "nike": "Tênis original com tecnologia inovadora para máximo conforto",
@@ -164,108 +226,177 @@ def extrair_beneficio(link: str):
             if key in dominio:
                 logger.info(f"🎯 Benefício: {value[:50]}...")
                 return value
+        
+        return "Produto de alta qualidade com excelente custo-benefício"
+        
     except Exception as e:
-        logger.warning(f"⚠️ Falha no fallback de benefício: {e}")
-    
-    return "Produto de alta qualidade com excelente custo-benefício"
+        logger.error(f"❌ Erro ao extrair benefício: {e}")
+        return "Produto de alta qualidade com excelente custo-benefício"
 
 # =========================
-# FUNÇÃO: BUSCAR IMAGEM NO BING (GRATUITO)
+# FUNÇÃO: EXTRAIR IMAGEM (DIRETO DO SITE)
 # =========================
 
-def buscar_imagem_bing(titulo: str):
-    """Busca imagem no Bing Images (gratuito, sem chave)"""
+def extrair_imagem_direta(link: str):
+    """Extrai a imagem real do produto diretamente do site"""
     try:
-        # Limpa o título
-        titulo_busca = titulo.replace("Tenis", "Tênis").replace("Masculino", "").replace("Feminino", "").strip()
-        query = urllib.parse.quote(f"{titulo_busca} produto")
+        logger.info(f"🔍 Extraindo imagem direta de: {link}")
         
-        # API do Bing (gratuita)
-        bing_url = f"https://www.bing.com/images/search?q={query}&form=HDRSC3"
+        # Tenta com diferentes User-Agents
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        ]
         
+        for user_agent in user_agents:
+            try:
+                headers = HEADERS.copy()
+                headers["User-Agent"] = user_agent
+                
+                response = requests.get(link, headers=headers, timeout=15)
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    
+                    # =========================
+                    # 1. Open Graph (mais confiável)
+                    # =========================
+                    og_image = soup.find("meta", property="og:image")
+                    if og_image and og_image.get("content"):
+                        url_imagem = og_image["content"]
+                        if url_imagem.startswith("http"):
+                            logger.info(f"✅ Imagem via OG: {url_imagem[:50]}...")
+                            return baixar_e_validar_imagem(url_imagem)
+                    
+                    # =========================
+                    # 2. Twitter Card
+                    # =========================
+                    tw_image = soup.find("meta", property="twitter:image")
+                    if tw_image and tw_image.get("content"):
+                        url_imagem = tw_image["content"]
+                        if url_imagem.startswith("http"):
+                            logger.info(f"✅ Imagem via Twitter: {url_imagem[:50]}...")
+                            return baixar_e_validar_imagem(url_imagem)
+                    
+                    # =========================
+                    # 3. JSON-LD (dados estruturados)
+                    # =========================
+                    script_tags = soup.find_all("script", type="application/ld+json")
+                    for script in script_tags:
+                        try:
+                            data = json.loads(script.string)
+                            if "image" in data:
+                                url_imagem = data["image"]
+                                if isinstance(url_imagem, str) and url_imagem.startswith("http"):
+                                    logger.info(f"✅ Imagem via JSON-LD: {url_imagem[:50]}...")
+                                    return baixar_e_validar_imagem(url_imagem)
+                                elif isinstance(url_imagem, list) and len(url_imagem) > 0:
+                                    for img in url_imagem:
+                                        if isinstance(img, str) and img.startswith("http"):
+                                            logger.info(f"✅ Imagem via JSON-LD: {img[:50]}...")
+                                            return baixar_e_validar_imagem(img)
+                        except:
+                            pass
+                    
+                    # =========================
+                    # 4. CSS Selectors (imagem principal)
+                    # =========================
+                    selectores = [
+                        "img[class*='product-image']",
+                        "img[class*='main-image']",
+                        "img[class*='product-img']",
+                        "img[class*='produto']",
+                        "img[itemprop='image']",
+                        "img[data-testid='product-image']",
+                        "img[data-image]",
+                        "img[data-src]",
+                        "img[class*='product-card']",
+                        "img[class*='product']",
+                        "img[class*='image']",
+                        "img[class*='photo']",
+                        "img[class*='gallery']",
+                        "img[class*='zoom']",
+                    ]
+                    
+                    for selector in selectores:
+                        img = soup.select_one(selector)
+                        if img:
+                            for attr in ["src", "data-src", "data-image", "content"]:
+                                url_imagem = img.get(attr)
+                                if url_imagem:
+                                    if url_imagem.startswith("http"):
+                                        if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
+                                            logger.info(f"✅ Imagem via CSS: {url_imagem[:50]}...")
+                                            return baixar_e_validar_imagem(url_imagem)
+                                    elif url_imagem.startswith("//"):
+                                        url_imagem = f"https:{url_imagem}"
+                                        if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
+                                            logger.info(f"✅ Imagem via CSS: {url_imagem[:50]}...")
+                                            return baixar_e_validar_imagem(url_imagem)
+                    
+                    # =========================
+                    # 5. Regex (último recurso)
+                    # =========================
+                    padroes = [
+                        r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"\']*)?',
+                        r'https?://[^\s"\']+product[^\s"\']+\.(?:jpg|jpeg|png|webp)',
+                        r'https?://[^\s"\']+image[^\s"\']+\.(?:jpg|jpeg|png|webp)',
+                        r'https?://[^\s"\']+imagem[^\s"\']+\.(?:jpg|jpeg|png|webp)',
+                    ]
+                    
+                    for padrao in padroes:
+                        matches = re.findall(padrao, response.text, re.IGNORECASE)
+                        for url_imagem in matches:
+                            if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
+                                if "thumbnail" not in url_imagem.lower():
+                                    logger.info(f"✅ Imagem via Regex: {url_imagem[:50]}...")
+                                    return baixar_e_validar_imagem(url_imagem)
+            except Exception as e:
+                logger.warning(f"⚠️ Tentativa com User-Agent falhou: {e}")
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao extrair imagem direta: {e}")
+        return None
+
+# =========================
+# FUNÇÃO: BAIXAR E VALIDAR IMAGEM
+# =========================
+
+def baixar_e_validar_imagem(url_imagem: str):
+    """Baixa a imagem e valida se é uma imagem válida"""
+    try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         
-        response = requests.get(bing_url, headers=headers, timeout=15)
+        response = requests.get(url_imagem, headers=headers, timeout=15)
         if response.status_code == 200:
-            soup = BeautifulSoup(response.text, "html.parser")
+            # Salva a imagem
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+            temp_file.write(response.content)
+            temp_file.close()
             
-            # Busca imagens no Bing
-            # O Bing usa imagens com classe "mimg"
-            imagens = soup.find_all("img", {"class": "mimg"})
-            for img in imagens:
-                src = img.get("src")
-                if src and src.startswith("https") and "logo" not in src.lower():
-                    # Baixa a imagem
-                    img_response = requests.get(src, headers=headers, timeout=15)
-                    if img_response.status_code == 200:
-                        # Salva a imagem
-                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-                        temp_file.write(img_response.content)
-                        temp_file.close()
-                        
-                        # Verifica se é uma imagem válida
-                        try:
-                            img_verify = Image.open(temp_file.name)
-                            img_verify.verify()
-                            logger.info(f"✅ Imagem via Bing: {src[:50]}...")
-                            return temp_file.name
-                        except:
-                            os.remove(temp_file.name)
-                            continue
-            
-            # Fallback: tenta outro seletor
-            imagens = soup.find_all("img", {"class": "img_cont"})
-            for img in imagens:
-                src = img.get("src")
-                if src and src.startswith("https") and "logo" not in src.lower():
-                    img_response = requests.get(src, headers=headers, timeout=15)
-                    if img_response.status_code == 200:
-                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-                        temp_file.write(img_response.content)
-                        temp_file.close()
-                        try:
-                            img_verify = Image.open(temp_file.name)
-                            img_verify.verify()
-                            logger.info(f"✅ Imagem via Bing (fallback): {src[:50]}...")
-                            return temp_file.name
-                        except:
-                            os.remove(temp_file.name)
-                            continue
+            # Valida a imagem
+            try:
+                img = Image.open(temp_file.name)
+                img.verify()
+                tamanho = os.path.getsize(temp_file.name)
+                if tamanho > 100:  # Pelo menos 100 bytes
+                    logger.info(f"✅ Imagem válida: {temp_file.name} ({tamanho} bytes)")
+                    return temp_file.name
+                else:
+                    os.remove(temp_file.name)
+                    return None
+            except:
+                os.remove(temp_file.name)
+                return None
         
         return None
         
     except Exception as e:
-        logger.error(f"❌ Erro ao buscar imagem no Bing: {e}")
-        return None
-
-# =========================
-# FUNÇÃO: BUSCAR IMAGEM NO WIKIMEDIA (FALLBACK)
-# =========================
-
-def buscar_imagem_wikimedia(titulo: str):
-    """Busca imagem no Wikimedia Commons (gratuito)"""
-    try:
-        query = urllib.parse.quote(titulo)
-        wikimedia_url = f"https://commons.wikimedia.org/w/api.php?action=query&list=search&srsearch={query}&format=json"
-        
-        response = requests.get(wikimedia_url, timeout=15)
-        if response.status_code == 200:
-            data = response.json()
-            if "query" in data and "search" in data["query"]:
-                for resultado in data["query"]["search"]:
-                    titulo_imagem = resultado["title"]
-                    # Pega a URL da imagem
-                    image_url = f"https://commons.wikimedia.org/wiki/Special:FilePath/{titulo_imagem}"
-                    return image_url
-        
-        return None
-        
-    except Exception as e:
-        logger.error(f"❌ Erro ao buscar imagem no Wikimedia: {e}")
+        logger.error(f"❌ Erro ao baixar imagem: {e}")
         return None
 
 # =========================
@@ -273,22 +404,14 @@ def buscar_imagem_wikimedia(titulo: str):
 # =========================
 
 def extrair_imagem(link: str):
-    """Extrai imagem do produto (prioridade: Bing, fallback: None)"""
+    """Extrai imagem do produto (prioridade: site, fallback: None)"""
     
-    # Gera o título para busca
-    titulo = gerar_titulo(link)
+    # 1. Tenta extrair a imagem REAL do site
+    imagem = extrair_imagem_direta(link)
     
-    # 1. Tenta buscar a imagem no Bing
-    imagem = buscar_imagem_bing(titulo)
-    
-    # 2. Se falhou, tenta Wikimedia
+    # 2. Se falhou, retorna None
     if not imagem:
-        logger.info("🔄 Bing falhou, tentando Wikimedia...")
-        imagem = buscar_imagem_wikimedia(titulo)
-    
-    # 3. Se ainda falhou, retorna None
-    if not imagem:
-        logger.error("❌ Nenhuma imagem encontrada")
+        logger.error("❌ Nenhuma imagem encontrada no site")
     
     # Extrai preço e benefício
     preco = extrair_preco(link)
