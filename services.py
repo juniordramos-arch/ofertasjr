@@ -3,14 +3,25 @@ import logging
 import re
 import json
 import time
-import requests  # <-- LINHA ADICIONADA
+import requests
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
+
+# =========================
+# CONFIGURAÇÃO DE LOG (DEFINIDO PRIMEIRO)
+# =========================
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # =========================
 # TENTAR IMPORTAR SELENIUM (OPCIONAL)
 # =========================
 
+SELENIUM_DISPONIVEL = False
 try:
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
@@ -21,11 +32,10 @@ try:
     from webdriver_manager.chrome import ChromeDriverManager
     SELENIUM_DISPONIVEL = True
     logger.info("✅ Selenium disponível")
-except ImportError:
-    SELENIUM_DISPONIVEL = False
-    logger.warning("⚠️ Selenium não disponível - usando apenas BeautifulSoup")
-
-logger = logging.getLogger(__name__)
+except ImportError as e:
+    logger.warning(f"⚠️ Selenium não disponível: {e}")
+except Exception as e:
+    logger.warning(f"⚠️ Erro ao importar Selenium: {e}")
 
 # =========================
 # AWIN - MAPEAMENTO
