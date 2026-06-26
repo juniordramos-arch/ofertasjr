@@ -1,12 +1,9 @@
 import os
 import logging
-import json
-import asyncio
-from flask import Flask, jsonify, request
-from telegram import Update
+import time
+import threading
+from flask import Flask, jsonify
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
-from config import BOT_TOKEN, WEBHOOK_URL
-from handlers import start, receive_link, button_click
 
 # =========================
 # CONFIGURAÇÃO DE LOGS
@@ -19,14 +16,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # =========================
-# CRIAÇÃO DO BOT (GLOBAL)
+# IMPORTAÇÃO DOS HANDLERS
 # =========================
 
-# Cria a aplicação do bot uma única vez
-bot_app = Application.builder().token(BOT_TOKEN).build()
-bot_app.add_handler(CommandHandler("start", start))
-bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link))
-bot_app.add_handler(CallbackQueryHandler(button_click))
+try:
+    from handlers import start, receive_link, button_click
+    logger.info("✅ Handlers importados com sucesso")
+except Exception as e:
+    logger.error(f"❌ Erro ao importar handlers: {e}")
+    raise
+
+# =========================
+# CONFIGURAÇÃO
+# =========================
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    logger.error("❌ BOT_TOKEN não configurado!")
+    raise ValueError("BOT_TOKEN não configurado")
+
+PORT = int(os.getenv("PORT", 10000))
 
 # =========================
 # FLASK APP
@@ -39,87 +48,69 @@ def home():
     return jsonify({
         "status": "online",
         "bot": "OfertasJR Pro",
-        "version": "3.0.6",
-        "mode": "webhook"
+        "version": "3.0.8",
+        "mode": "polling"
     })
 
 @flask_app.route('/health')
 def health():
     return jsonify({"status": "healthy"})
 
-@flask_app.route('/webhook', methods=['POST'])
-def webhook():
-    """Processa as atualizações do Telegram via webhook"""
+def run_flask():
+    """Roda o servidor Flask em uma thread separada"""
     try:
-        # Obtém os dados JSON da requisição
-        json_data = request.get_json(force=True)
-        
-        # Cria o objeto Update
-        update = Update.de_json(json_data, bot_app.bot)
-        
-        # Processa a atualização de forma síncrona
-        # Usa asyncio.run() que gerencia o loop automaticamente
-        asyncio.run(bot_app.process_update(update))
-        
-        return jsonify({"status": "ok"})
-    
+        flask_app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
     except Exception as e:
-        logger.error(f"Erro no webhook: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@flask_app.route('/webhook', methods=['GET'])
-def webhook_get():
-    """Responde a requisições GET (para teste)"""
-    return jsonify({"message": "Webhook endpoint. Use POST para enviar atualizações."})
+        logger.error(f"❌ Erro no Flask: {e}")
 
 # =========================
-# CONFIGURAÇÃO DO WEBHOOK
+# FUNÇÃO PRINCIPAL DO BOT
 # =========================
 
-def setup_webhook():
-    """Configura o webhook usando a API do Telegram"""
-    import requests
-    
-    webhook_url = f"{WEBHOOK_URL}/webhook"
-    api_url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook"
-    
+def run_bot():
+    """Configura e inicia o bot"""
     try:
-        # Verifica se o webhook já está configurado
-        check_url = f"https://api.telegram.org/bot{BOT_TOKEN}/getWebhookInfo"
-        check_response = requests.get(check_url)
+        logger.info("🚀 Iniciando configuração do bot...")
         
-        if check_response.status_code == 200:
-            current = check_response.json()
-            if current.get('result', {}).get('url') == webhook_url:
-                logger.info(f"✅ Webhook já está configurado: {webhook_url}")
-                return True
+        # Cria a aplicação
+        application = Application.builder().token(BOT_TOKEN).build()
         
-        # Configura o webhook
-        response = requests.post(api_url, json={
-            "url": webhook_url,
-            "drop_pending_updates": True,
-            "max_connections": 10
-        })
+        # Adiciona handlers
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link))
+        application.add_handler(CallbackQueryHandler(button_click))
         
-        if response.status_code == 200:
-            result = response.json()
-            if result.get("ok"):
-                logger.info(f"✅ Webhook configurado com sucesso em: {webhook_url}")
-                return True
-            else:
-                logger.error(f"❌ Erro ao configurar webhook: {result}")
-                return False
-        else:
-            logger.error(f"❌ Erro ao configurar webhook: {response.status_code} - {response.text}")
-            return False
-            
+        # Remove webhook
+        import requests
+        try:
+            api_url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
+            response = requests.post(api_url, json={"drop_pending_updates": True})
+            logger.info(f"✅ Webhook removido: {response.json()}")
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao remover webhook: {e}")
+        
+        # Inicia polling
+        logger.info("🚀 Bot iniciado em modo Polling. Aguardando mensagens...")
+        application.run_polling()
+        
     except Exception as e:
-        logger.error(f"❌ Erro na configuração do webhook: {e}")
-        return False
+        logger.error(f"❌ Erro fatal no bot: {e}")
+        raise
 
 # =========================
-# CONFIGURA INICIAL
+# MAIN
 # =========================
 
-# Configura o webhook quando o app inicia
-setup_webhook()
+if __name__ == "__main__":
+    logger.info("🚀 Iniciando OfertasJR Pro v3.0.8...")
+    
+    # Inicia Flask em thread separada
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    logger.info(f"✅ Flask iniciado na porta {PORT}")
+    
+    # Aguarda o Flask iniciar
+    time.sleep(2)
+    
+    # Inicia o bot
+    run_bot()
