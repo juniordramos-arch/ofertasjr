@@ -214,36 +214,37 @@ def extrair_beneficio(link: str):
     return "Produto de alta qualidade com excelente custo-benefício"
 
 # =========================
-# FUNÇÃO: EXTRAIR IMAGEM DIRETA DO SITE (MESMO COM BLOQUEIO)
+# FUNÇÃO: EXTRAIR IMAGEM DIRETA (COM BYPASS DE BLOQUEIO)
 # =========================
 
 def extrair_imagem_direta(link: str):
-    """Tenta extrair a imagem real do produto diretamente do site"""
+    """Tenta extrair a imagem real do produto com bypass de bloqueio"""
     try:
-        # Headers que imitam um navegador real
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Cache-Control": "max-age=0",
-        }
+        # Lista de User-Agents para tentar
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        ]
         
-        # Tenta com diferentes estratégias
-        for strategy in ["direct", "mobile", "referer"]:
+        for user_agent in user_agents:
             try:
-                if strategy == "mobile":
-                    headers["User-Agent"] = "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1"
-                elif strategy == "referer":
-                    headers["Referer"] = "https://www.google.com/"
+                headers = {
+                    "User-Agent": user_agent,
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Connection": "keep-alive",
+                    "Upgrade-Insecure-Requests": "1",
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "none",
+                    "Sec-Fetch-User": "?1",
+                    "Cache-Control": "max-age=0",
+                }
                 
-                logger.info(f"🔍 Tentando extrair imagem com estratégia: {strategy}")
+                logger.info(f"🔍 Tentando com User-Agent: {user_agent[:30]}...")
                 response = requests.get(link, headers=headers, timeout=15, allow_redirects=True)
                 
                 if response.status_code == 200:
@@ -298,6 +299,7 @@ def extrair_imagem_direta(link: str):
                         "img[class*='image']",
                         "img[class*='photo']",
                         "img[class*='gallery']",
+                        "img[class*='zoom']",
                     ]
                     
                     for selector in selectores:
@@ -307,7 +309,6 @@ def extrair_imagem_direta(link: str):
                                 url_imagem = img.get(attr)
                                 if url_imagem:
                                     if url_imagem.startswith("http"):
-                                        # Ignora imagens pequenas (logo, ícone)
                                         if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
                                             logger.info(f"✅ Imagem via CSS: {url_imagem[:50]}...")
                                             return url_imagem
@@ -316,8 +317,24 @@ def extrair_imagem_direta(link: str):
                                         if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
                                             logger.info(f"✅ Imagem via CSS: {url_imagem[:50]}...")
                                             return url_imagem
+                    
+                    # 5. Regex no HTML (último recurso)
+                    padroes = [
+                        r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"\']*)?',
+                        r'https?://[^\s"\']+product[^\s"\']+\.(?:jpg|jpeg|png|webp)',
+                        r'https?://[^\s"\']+image[^\s"\']+\.(?:jpg|jpeg|png|webp)',
+                        r'https?://[^\s"\']+imagem[^\s"\']+\.(?:jpg|jpeg|png|webp)',
+                    ]
+                    
+                    for padrao in padroes:
+                        matches = re.findall(padrao, response.text, re.IGNORECASE)
+                        for url_imagem in matches:
+                            if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
+                                if "thumbnail" not in url_imagem.lower():
+                                    logger.info(f"✅ Imagem via Regex: {url_imagem[:50]}...")
+                                    return url_imagem
             except Exception as e:
-                logger.warning(f"⚠️ Estratégia {strategy} falhou: {e}")
+                logger.warning(f"⚠️ Tentativa com User-Agent falhou: {e}")
         
         return None
         
