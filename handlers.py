@@ -1,4 +1,5 @@
 import logging
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from services import gerar_link_afiliado, extrair_imagem, gerar_titulo, baixar_imagem_para_telegram
@@ -13,7 +14,7 @@ ofertas = {}
 aguardando_cupom = {}
 
 # =========================
-# IMAGEM PADRÃO (caso não encontre)
+# IMAGEM PADRÃO
 # =========================
 
 IMAGEM_PADRAO = "https://via.placeholder.com/800x600/1a1a2e/FFFFFF?text=Oferta+JR+Pro"
@@ -48,15 +49,8 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         titulo = gerar_titulo(text)
         imagem = extrair_imagem(text)
         
-        # =========================
-        # VERIFICA SE A IMAGEM É VÁLIDA
-        # =========================
-        imagem_valida = False
-        if imagem:
-            imagem_valida = await verificar_imagem(imagem)
-        
-        # Se não encontrou imagem válida, usa a padrão
-        if not imagem_valida:
+        # Se não encontrou imagem, usa a padrão
+        if not imagem:
             imagem = IMAGEM_PADRAO
             logger.info("🖼️ Usando imagem padrão")
         
@@ -87,7 +81,7 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if imagem == IMAGEM_PADRAO:
             preview += f"📸 Imagem padrão (fallback)\n\n"
         else:
-            preview += f"📸 Imagem encontrada ✅\n\n"
+            preview += f"📸 Imagem capturada ✅\n\n"
         
         preview += f"🔗 {link_afiliado[:50]}..."
         
@@ -98,41 +92,32 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # ENVIA A IMAGEM
         # =========================
         try:
-            await update.message.reply_photo(
-                imagem,
-                caption=f"📸 {titulo_limpo}"
-            )
+            # Se for arquivo local, abre e envia
+            if isinstance(imagem, str) and imagem.startswith("/tmp/"):
+                with open(imagem, 'rb') as photo:
+                    await update.message.reply_photo(
+                        photo,
+                        caption=f"📸 Captura de tela: {titulo_limpo}"
+                    )
+                # Remove arquivo temporário
+                try:
+                    os.remove(imagem)
+                except:
+                    pass
+            else:
+                # Envia por URL
+                await update.message.reply_photo(
+                    imagem,
+                    caption=f"📸 {titulo_limpo}"
+                )
             logger.info(f"✅ Imagem enviada para {user_id}")
         except Exception as e:
             logger.error(f"❌ Erro ao enviar imagem: {e}")
-            # Tenta enviar a imagem padrão se falhou
-            try:
-                await update.message.reply_photo(
-                    IMAGEM_PADRAO,
-                    caption="📸 Imagem padrão"
-                )
-            except:
-                await update.message.reply_text("⚠️ Não foi possível carregar a imagem.")
+            await update.message.reply_text("⚠️ Não foi possível carregar a imagem.")
             
     except Exception as e:
         logger.error(f"❌ Erro ao processar link: {e}")
         await update.message.reply_text("❌ Erro ao processar o link. Verifique se é válido.")
-
-async def verificar_imagem(url: str):
-    """Verifica se a imagem é acessível"""
-    try:
-        import requests
-        response = requests.head(url, timeout=10)
-        if response.status_code == 200:
-            content_type = response.headers.get("content-type", "")
-            return "image" in content_type
-        return False
-    except:
-        return False
-
-# =========================
-# BUTTON CLICK (MANTIDO)
-# =========================
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Processa cliques nos botões"""
@@ -150,9 +135,6 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             from config import CHANNEL_ID
             
-            # =========================
-            # MENSAGEM FINAL
-            # =========================
             msg = f"🔥 **OFERTA EXCLUSIVA**\n\n"
             msg += f"**{oferta['titulo']}**\n\n"
             
@@ -165,17 +147,27 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # ENVIA PARA O CANAL
             # =========================
             if oferta.get("imagem"):
-                await context.bot.send_photo(
-                    CHANNEL_ID,
-                    oferta["imagem"],
-                    caption=msg
-                )
+                # Se for arquivo local
+                if isinstance(oferta["imagem"], str) and oferta["imagem"].startswith("/tmp/"):
+                    with open(oferta["imagem"], 'rb') as photo:
+                        await context.bot.send_photo(
+                            CHANNEL_ID,
+                            photo,
+                            caption=msg
+                        )
+                    try:
+                        os.remove(oferta["imagem"])
+                    except:
+                        pass
+                else:
+                    await context.bot.send_photo(
+                        CHANNEL_ID,
+                        oferta["imagem"],
+                        caption=msg
+                    )
                 logger.info(f"✅ Oferta publicada com imagem por {user_id}")
             else:
-                await context.bot.send_message(
-                    CHANNEL_ID,
-                    msg
-                )
+                await context.bot.send_message(CHANNEL_ID, msg)
                 logger.info(f"✅ Oferta publicada sem imagem por {user_id}")
             
             await query.edit_message_text("✅ **Publicado com sucesso!**")
