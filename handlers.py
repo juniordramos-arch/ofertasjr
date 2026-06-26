@@ -1,5 +1,4 @@
 import logging
-import threading
 from urllib.parse import urlparse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -8,24 +7,11 @@ from services import gerar_link_afiliado, extrair_imagem, gerar_titulo
 logger = logging.getLogger(__name__)
 
 # =========================
-# MEMÓRIA DO BOT (Thread-Safe)
+# MEMÓRIA DO BOT
 # =========================
 
-# Usa um lock para evitar conflitos entre threads
-_ofertas_lock = threading.Lock()
-_ofertas = {}
-_aguardando_cupom_lock = threading.Lock()
-_aguardando_cupom = {}
-
-def get_ofertas():
-    """Retorna o dicionário de ofertas de forma thread-safe"""
-    with _ofertas_lock:
-        return _ofertas
-
-def get_aguardando_cupom():
-    """Retorna o dicionário de cupons de forma thread-safe"""
-    with _aguardando_cupom_lock:
-        return _aguardando_cupom
+ofertas = {}
+aguardando_cupom = {}
 
 # =========================
 # HANDLERS
@@ -45,14 +31,10 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text.strip()
     
-    ofertas = get_ofertas()
-    aguardando_cupom = get_aguardando_cupom()
-    
     # Verifica se é cupom
     if user_id in aguardando_cupom:
-        with _aguardando_cupom_lock:
-            ofertas[user_id]["cupom"] = text
-            del aguardando_cupom[user_id]
+        ofertas[user_id]["cupom"] = text
+        del aguardando_cupom[user_id]
         await update.message.reply_text(f"✅ Cupom salvo: **{text}**")
         return
     
@@ -63,15 +45,14 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         titulo = gerar_titulo(text)
         imagem = extrair_imagem(text)
         
-        # Salva no cache (thread-safe)
-        with _ofertas_lock:
-            ofertas[user_id] = {
-                "link_original": link_original,
-                "link_afiliado": link_afiliado,
-                "titulo": titulo,
-                "imagem": imagem,
-                "cupom": ""
-            }
+        # Salva no cache
+        ofertas[user_id] = {
+            "link_original": link_original,
+            "link_afiliado": link_afiliado,
+            "titulo": titulo,
+            "imagem": imagem,
+            "cupom": ""
+        }
         
         logger.info(f"Novo link de {user_id}: {titulo}")
         
@@ -117,7 +98,6 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     user_id = query.from_user.id
-    ofertas = get_ofertas()
     oferta = ofertas.get(user_id)
     
     if query.data == "publicar":
@@ -160,23 +140,17 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"❌ Erro ao publicar: {str(e)}"
             )
         
-        # Limpa cache (thread-safe)
-        with _ofertas_lock:
-            ofertas.pop(user_id, None)
+        # Limpa cache
+        ofertas.pop(user_id, None)
         
     elif query.data == "cupom":
-        aguardando_cupom = get_aguardando_cupom()
-        with _aguardando_cupom_lock:
-            aguardando_cupom[user_id] = True
+        aguardando_cupom[user_id] = True
         await query.edit_message_text(
             "🎟 **Envie o código do cupom:**\n\n"
             "Digite apenas o código (ex: OFERTA10)"
         )
         
     elif query.data == "cancelar":
-        with _ofertas_lock:
-            ofertas.pop(user_id, None)
-        with _aguardando_cupom_lock:
-            aguardando_cupom = get_aguardando_cupom()
-            aguardando_cupom.pop(user_id, None)
+        ofertas.pop(user_id, None)
+        aguardando_cupom.pop(user_id, None)
         await query.edit_message_text("❌ **Oferta cancelada.**")
