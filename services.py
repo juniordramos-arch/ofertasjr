@@ -107,13 +107,13 @@ def gerar_titulo(link: str):
         return "Produto"
 
 # =========================
-# FUNÇÃO: EXTRAIR PREÇO (VIA API)
+# FUNÇÃO: EXTRAIR PREÇO
 # =========================
 
 def extrair_preco(link: str):
     """Extrai preço usando múltiplas estratégias"""
     
-    # Estratégia 1: API do Google Shopping (gratuita)
+    # Estratégia 1: DuckDuckGo
     try:
         import urllib.parse
         encoded_link = urllib.parse.quote(link)
@@ -123,7 +123,6 @@ def extrair_preco(link: str):
             data = response.json()
             if "AbstractText" in data:
                 texto = data["AbstractText"]
-                # Busca padrões de preço
                 padroes = [
                     r'R\$\s*[\d.,]+',
                     r'\d+[\.,]\d{2}',
@@ -134,12 +133,12 @@ def extrair_preco(link: str):
                         preco = match.group(0)
                         if not preco.startswith("R$"):
                             preco = f"R$ {preco}"
-                        logger.info(f"💰 Preço via DuckDuckGo: {preco}")
+                        logger.info(f"💰 Preço: {preco}")
                         return preco
     except Exception as e:
         logger.warning(f"⚠️ Falha na API DuckDuckGo: {e}")
     
-    # Estratégia 2: Simular preço baseado no domínio (fallback)
+    # Estratégia 2: Fallback por domínio
     try:
         dominio = urlparse(link).netloc.replace("www.", "").split(".")[0].lower()
         precos_fallback = {
@@ -157,7 +156,7 @@ def extrair_preco(link: str):
         }
         for key, value in precos_fallback.items():
             if key in dominio:
-                logger.info(f"💰 Preço fallback para {dominio}: {value}")
+                logger.info(f"💰 Preço: {value}")
                 return value
     except Exception as e:
         logger.warning(f"⚠️ Falha no fallback de preço: {e}")
@@ -165,13 +164,13 @@ def extrair_preco(link: str):
     return None
 
 # =========================
-# FUNÇÃO: EXTRAIR BENEFÍCIO (VIA API)
+# FUNÇÃO: EXTRAIR BENEFÍCIO
 # =========================
 
 def extrair_beneficio(link: str):
     """Extrai benefício usando múltiplas estratégias"""
     
-    # Estratégia 1: API do DuckDuckGo
+    # Estratégia 1: DuckDuckGo
     try:
         import urllib.parse
         encoded_link = urllib.parse.quote(link)
@@ -182,15 +181,14 @@ def extrair_beneficio(link: str):
             if "AbstractText" in data:
                 texto = data["AbstractText"]
                 if texto:
-                    # Pega as primeiras 80 palavras
                     beneficio = " ".join(texto.split()[:15])
                     if len(beneficio) > 20:
-                        logger.info(f"🎯 Benefício via DuckDuckGo: {beneficio[:50]}...")
+                        logger.info(f"🎯 Benefício: {beneficio[:50]}...")
                         return beneficio
     except Exception as e:
         logger.warning(f"⚠️ Falha na API DuckDuckGo: {e}")
     
-    # Estratégia 2: Fallback baseado no domínio
+    # Estratégia 2: Fallback por domínio
     try:
         dominio = urlparse(link).netloc.replace("www.", "").split(".")[0].lower()
         beneficios_fallback = {
@@ -208,7 +206,7 @@ def extrair_beneficio(link: str):
         }
         for key, value in beneficios_fallback.items():
             if key in dominio:
-                logger.info(f"🎯 Benefício fallback para {dominio}: {value[:50]}...")
+                logger.info(f"🎯 Benefício: {value[:50]}...")
                 return value
     except Exception as e:
         logger.warning(f"⚠️ Falha no fallback de benefício: {e}")
@@ -216,13 +214,125 @@ def extrair_beneficio(link: str):
     return "Produto de alta qualidade com excelente custo-benefício"
 
 # =========================
-# FUNÇÃO: EXTRAIR IMAGEM (VIA API)
+# FUNÇÃO: EXTRAIR IMAGEM DIRETA DO SITE (MESMO COM BLOQUEIO)
 # =========================
 
-def extrair_imagem_com_bs4_avancado(link: str):
-    """Tenta extrair imagem via API de captura de tela"""
+def extrair_imagem_direta(link: str):
+    """Tenta extrair a imagem real do produto diretamente do site"""
     try:
-        # Estratégia 1: Page2Images (gratuito)
+        # Headers que imitam um navegador real
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Cache-Control": "max-age=0",
+        }
+        
+        # Tenta com diferentes estratégias
+        for strategy in ["direct", "mobile", "referer"]:
+            try:
+                if strategy == "mobile":
+                    headers["User-Agent"] = "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1"
+                elif strategy == "referer":
+                    headers["Referer"] = "https://www.google.com/"
+                
+                logger.info(f"🔍 Tentando extrair imagem com estratégia: {strategy}")
+                response = requests.get(link, headers=headers, timeout=15, allow_redirects=True)
+                
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    
+                    # 1. Open Graph (mais comum)
+                    og_image = soup.find("meta", property="og:image")
+                    if og_image and og_image.get("content"):
+                        url_imagem = og_image["content"]
+                        if url_imagem.startswith("http"):
+                            logger.info(f"✅ Imagem via OG: {url_imagem[:50]}...")
+                            return url_imagem
+                    
+                    # 2. Twitter Card
+                    tw_image = soup.find("meta", property="twitter:image")
+                    if tw_image and tw_image.get("content"):
+                        url_imagem = tw_image["content"]
+                        if url_imagem.startswith("http"):
+                            logger.info(f"✅ Imagem via Twitter: {url_imagem[:50]}...")
+                            return url_imagem
+                    
+                    # 3. JSON-LD
+                    script_tags = soup.find_all("script", type="application/ld+json")
+                    for script in script_tags:
+                        try:
+                            data = json.loads(script.string)
+                            if "image" in data:
+                                url_imagem = data["image"]
+                                if isinstance(url_imagem, str) and url_imagem.startswith("http"):
+                                    logger.info(f"✅ Imagem via JSON-LD: {url_imagem[:50]}...")
+                                    return url_imagem
+                                elif isinstance(url_imagem, list) and len(url_imagem) > 0:
+                                    for img in url_imagem:
+                                        if isinstance(img, str) and img.startswith("http"):
+                                            logger.info(f"✅ Imagem via JSON-LD: {img[:50]}...")
+                                            return img
+                        except:
+                            pass
+                    
+                    # 4. CSS Selectors específicos
+                    selectores = [
+                        "img[class*='product-image']",
+                        "img[class*='main-image']",
+                        "img[class*='product-img']",
+                        "img[class*='produto']",
+                        "img[itemprop='image']",
+                        "img[data-testid='product-image']",
+                        "img[data-image]",
+                        "img[data-src]",
+                        "img[class*='product-card']",
+                        "img[class*='product']",
+                        "img[class*='image']",
+                        "img[class*='photo']",
+                        "img[class*='gallery']",
+                    ]
+                    
+                    for selector in selectores:
+                        img = soup.select_one(selector)
+                        if img:
+                            for attr in ["src", "data-src", "data-image", "content"]:
+                                url_imagem = img.get(attr)
+                                if url_imagem:
+                                    if url_imagem.startswith("http"):
+                                        # Ignora imagens pequenas (logo, ícone)
+                                        if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
+                                            logger.info(f"✅ Imagem via CSS: {url_imagem[:50]}...")
+                                            return url_imagem
+                                    elif url_imagem.startswith("//"):
+                                        url_imagem = f"https:{url_imagem}"
+                                        if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
+                                            logger.info(f"✅ Imagem via CSS: {url_imagem[:50]}...")
+                                            return url_imagem
+            except Exception as e:
+                logger.warning(f"⚠️ Estratégia {strategy} falhou: {e}")
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao extrair imagem direta: {e}")
+        return None
+
+# =========================
+# FUNÇÃO: CAPTURAR IMAGEM VIA API (FALLBACK)
+# =========================
+
+def capturar_imagem_com_api(link: str):
+    """Usa API para capturar imagem (fallback se a direta falhar)"""
+    try:
+        # Page2Images
         page2images_url = f"http://api.page2images.com/directlink?p2i_device=1&p2i_screen=1024x768&p2i_size=800x600&p2i_url={link}"
         response = requests.get(page2images_url, timeout=30)
         if response.status_code == 200:
@@ -234,7 +344,7 @@ def extrair_imagem_com_bs4_avancado(link: str):
     except Exception as e:
         logger.warning(f"⚠️ Falha no Page2Images: {e}")
     
-    # Estratégia 2: MiniWebTool
+    # MiniWebTool
     try:
         fallback_url = f"https://api.miniwebtool.com/screenshot/?url={link}&width=800&height=600"
         response = requests.get(fallback_url, timeout=30)
@@ -247,48 +357,29 @@ def extrair_imagem_com_bs4_avancado(link: str):
     except Exception as e:
         logger.warning(f"⚠️ Falha no MiniWebTool: {e}")
     
-    # Estratégia 3: Screenshot Layer (gratuito)
-    try:
-        screenshot_url = f"https://screenshotlayer.com/api/embed?url={link}&width=800&height=600"
-        response = requests.get(screenshot_url, timeout=30)
-        if response.status_code == 200:
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-            temp_file.write(response.content)
-            temp_file.close()
-            logger.info(f"✅ Captura de tela (ScreenshotLayer): {temp_file.name}")
-            return temp_file.name
-    except Exception as e:
-        logger.warning(f"⚠️ Falha no ScreenshotLayer: {e}")
-    
     return None
 
-def capturar_imagem_com_api(link: str):
-    """Wrapper para extrair imagem via API"""
-    return extrair_imagem_com_bs4_avancado(link)
-
 # =========================
-# FUNÇÃO PRINCIPAL: EXTRAIR IMAGEM (COM PREÇO E BENEFÍCIO)
+# FUNÇÃO: EXTRAIR IMAGEM (PRINCIPAL)
 # =========================
 
 def extrair_imagem(link: str):
-    """Extrai imagem, preço e benefício do produto usando múltiplas APIs"""
+    """Extrai imagem do produto (prioridade: direta do site, fallback: API)"""
     
-    # Extrai preço (via DuckDuckGo + fallback)
-    preco = extrair_preco(link)
+    # 1. Tenta extrair a imagem REAL do site
+    imagem = extrair_imagem_direta(link)
     
-    # Extrai benefício (via DuckDuckGo + fallback)
-    beneficio = extrair_beneficio(link)
-    
-    # Extrai imagem (via captura de tela)
-    imagem = capturar_imagem_com_api(link)
-    
-    # Se não encontrou imagem, tenta mais uma vez com outro serviço
+    # 2. Se falhou, tenta captura de tela via API
     if not imagem:
-        try:
-            # Tenta com serviço alternativo
-            alt_url = f"https://api.screenshotlayer.com/api/capture?access_key=YOUR_KEY&url={link}&viewport=800x600"
-            # (Nota: Isso é apenas exemplo, você precisaria de uma chave)
-        except:
-            pass
+        logger.info("🔄 Imagem direta falhou, tentando captura de tela...")
+        imagem = capturar_imagem_com_api(link)
+    
+    # 3. Se ainda falhou, retorna None
+    if not imagem:
+        logger.error("❌ Nenhuma imagem encontrada")
+    
+    # Extrai preço e benefício
+    preco = extrair_preco(link)
+    beneficio = extrair_beneficio(link)
     
     return imagem, preco, beneficio
