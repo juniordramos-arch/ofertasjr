@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 # CRIAÇÃO DO BOT (GLOBAL)
 # =========================
 
+# Cria a aplicação do bot uma única vez
 bot_app = Application.builder().token(BOT_TOKEN).build()
 bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link))
@@ -38,7 +39,7 @@ def home():
     return jsonify({
         "status": "online",
         "bot": "OfertasJR Pro",
-        "version": "3.0.5",
+        "version": "3.0.6",
         "mode": "webhook"
     })
 
@@ -56,16 +57,9 @@ def webhook():
         # Cria o objeto Update
         update = Update.de_json(json_data, bot_app.bot)
         
-        # Processa a atualização de forma síncrona usando asyncio
-        # Cria um novo loop de eventos para esta requisição
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            # Executa a função assíncrona de forma síncrona
-            loop.run_until_complete(bot_app.process_update(update))
-        finally:
-            loop.close()
+        # Processa a atualização de forma síncrona
+        # Usa asyncio.run() que gerencia o loop automaticamente
+        asyncio.run(bot_app.process_update(update))
         
         return jsonify({"status": "ok"})
     
@@ -123,5 +117,9 @@ def setup_webhook():
         logger.error(f"❌ Erro na configuração do webhook: {e}")
         return False
 
-# Configura o webhook ao iniciar
+# =========================
+# CONFIGURA INICIAL
+# =========================
+
+# Configura o webhook quando o app inicia
 setup_webhook()
