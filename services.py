@@ -2,9 +2,8 @@ import os
 import logging
 import re
 import json
-import time
-import requests
 import tempfile
+import requests
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
@@ -108,11 +107,11 @@ def gerar_titulo(link: str):
         return "Produto"
 
 # =========================
-# FUNÇÃO: EXTRAIR PREÇO E BENEFÍCIO
+# FUNÇÃO: EXTRAIR PREÇO (NOVA)
 # =========================
 
-def extrair_preco_e_beneficio(link: str):
-    """Tenta extrair preço e benefício do produto"""
+def extrair_preco(link: str):
+    """Extrai preço do produto"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -122,11 +121,6 @@ def extrair_preco_e_beneficio(link: str):
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, "html.parser")
-        
-        # =========================
-        # EXTRAIR PREÇO
-        # =========================
-        preco = None
         
         # Tenta encontrar preço com desconto
         padroes_preco = [
@@ -140,33 +134,53 @@ def extrair_preco_e_beneficio(link: str):
             match = re.search(padrao, response.text, re.IGNORECASE)
             if match:
                 preco = match.group(0)
-                break
+                logger.info(f"💰 Preço encontrado: {preco}")
+                return preco
         
-        # =========================
-        # EXTRAIR BENEFÍCIO
-        # =========================
-        beneficio = None
-        
-        # Tenta encontrar descrição/benefício
-        descricao = soup.find("meta", {"name": "description"})
-        if descricao and descricao.get("content"):
-            beneficio = descricao["content"][:100]  # Primeiros 100 caracteres
-        
-        if not beneficio:
-            # Tenta encontrar no texto
-            texto = soup.get_text()
-            frases = texto.split(".")
-            for frase in frases:
-                if "pra" in frase or "para" in frase or "com" in frase:
-                    if len(frase) > 20 and len(frase) < 100:
-                        beneficio = frase.strip()
-                        break
-        
-        return preco, beneficio
+        return None
         
     except Exception as e:
-        logger.error(f"❌ Erro ao extrair preço/benefício: {e}")
-        return None, None
+        logger.error(f"❌ Erro ao extrair preço: {e}")
+        return None
+
+# =========================
+# FUNÇÃO: EXTRAIR BENEFÍCIO
+# =========================
+
+def extrair_beneficio(link: str):
+    """Extrai benefício/descrição do produto"""
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        
+        response = requests.get(link, headers=headers, timeout=15)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, "html.parser")
+        
+        # Tenta encontrar descrição
+        descricao = soup.find("meta", {"name": "description"})
+        if descricao and descricao.get("content"):
+            beneficio = descricao["content"][:100]
+            logger.info(f"🎯 Benefício encontrado: {beneficio}")
+            return beneficio
+        
+        # Tenta encontrar no texto
+        texto = soup.get_text()
+        frases = texto.split(".")
+        for frase in frases:
+            if "pra" in frase or "para" in frase or "com" in frase:
+                if len(frase) > 20 and len(frase) < 100:
+                    beneficio = frase.strip()
+                    logger.info(f"🎯 Benefício encontrado: {beneficio}")
+                    return beneficio
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao extrair benefício: {e}")
+        return None
 
 # =========================
 # FUNÇÃO: EXTRAIR IMAGEM (BS4 AVANÇADO)
@@ -182,14 +196,8 @@ def extrair_imagem_com_bs4_avancado(link: str):
             "Accept-Encoding": "gzip, deflate, br",
             "Connection": "keep-alive",
             "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Cache-Control": "max-age=0",
         }
         
-        # Tenta com diferentes estratégias de requisição
         for strategy in ["direct", "mobile", "referer"]:
             try:
                 if strategy == "mobile":
@@ -250,7 +258,6 @@ def extrair_imagem_com_bs4_avancado(link: str):
                         "img[class*='product-card']",
                         "img[class*='product']",
                         "img[class*='image']",
-                        "img[class*='photo']",
                     ]
                     
                     for selector in selectores:
@@ -296,13 +303,10 @@ def extrair_imagem_com_bs4_avancado(link: str):
 
 def capturar_imagem_com_api(link: str):
     """Usa API gratuita para capturar imagem do produto"""
-    
-    # Estratégia 1: Page2Images (gratuito)
     try:
         page2images_url = f"http://api.page2images.com/directlink?p2i_device=1&p2i_screen=1024x768&p2i_size=800x600&p2i_url={link}"
         response = requests.get(page2images_url, timeout=30)
         if response.status_code == 200:
-            import tempfile
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
             temp_file.write(response.content)
             temp_file.close()
@@ -310,20 +314,6 @@ def capturar_imagem_com_api(link: str):
             return temp_file.name
     except Exception as e:
         logger.error(f"❌ Erro no Page2Images: {e}")
-    
-    # Estratégia 2: MiniWebTool (gratuito)
-    try:
-        fallback_url = f"https://api.miniwebtool.com/screenshot/?url={link}&width=800&height=600"
-        response = requests.get(fallback_url, timeout=30)
-        if response.status_code == 200:
-            import tempfile
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-            temp_file.write(response.content)
-            temp_file.close()
-            logger.info(f"✅ Captura de tela (MiniWebTool): {temp_file.name}")
-            return temp_file.name
-    except Exception as e:
-        logger.error(f"❌ Erro no MiniWebTool: {e}")
     
     return None
 
@@ -334,18 +324,17 @@ def capturar_imagem_com_api(link: str):
 def extrair_imagem(link: str):
     """Extrai imagem, preço e benefício do produto"""
     
-    # Extrai preço e benefício
-    preco, beneficio = extrair_preco_e_beneficio(link)
+    # Extrai preço
+    preco = extrair_preco(link)
+    
+    # Extrai benefício
+    beneficio = extrair_beneficio(link)
     
     # Extrai imagem
     imagem = None
-    
-    # Tenta BS4 Avançado
     imagem = extrair_imagem_com_bs4_avancado(link)
     
     if not imagem:
-        # Tenta API de Captura
         imagem = capturar_imagem_com_api(link)
     
-    # Retorna tudo
     return imagem, preco, beneficio
