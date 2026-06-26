@@ -1,8 +1,7 @@
 import logging
-import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from services import gerar_link_afiliado, extrair_imagem, gerar_titulo, baixar_imagem_para_telegram
+from services import gerar_link_afiliado, extrair_imagem, gerar_titulo
 
 logger = logging.getLogger(__name__)
 
@@ -12,12 +11,6 @@ logger = logging.getLogger(__name__)
 
 ofertas = {}
 aguardando_cupom = {}
-
-# =========================
-# IMAGEM PADRÃO
-# =========================
-
-IMAGEM_PADRAO = "https://via.placeholder.com/800x600/1a1a2e/FFFFFF?text=Oferta+JR+Pro"
 
 # =========================
 # HANDLERS
@@ -47,14 +40,8 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         link_afiliado = gerar_link_afiliado(text)
         titulo = gerar_titulo(text)
-        imagem = extrair_imagem(text)
+        imagem = extrair_imagem(text)  # SEMPRE retorna uma URL ou None
         
-        # Se não encontrou imagem, usa a padrão
-        if not imagem:
-            imagem = IMAGEM_PADRAO
-            logger.info("🖼️ Usando imagem padrão")
-        
-        # Remove extensões e caracteres especiais do título
         titulo_limpo = titulo.replace(".Html", "").replace(".html", "").strip()
         
         ofertas[user_id] = {
@@ -78,42 +65,30 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         preview = f"🔥 **PRÉVIA DA OFERTA**\n\n"
         preview += f"**{titulo_limpo}**\n\n"
         
-        if imagem == IMAGEM_PADRAO:
-            preview += f"📸 Imagem padrão (fallback)\n\n"
+        if imagem:
+            preview += f"📸 Imagem encontrada ✅\n\n"
         else:
-            preview += f"📸 Imagem capturada ✅\n\n"
+            preview += f"📸 Imagem NÃO encontrada ❌\n\n"
         
         preview += f"🔗 {link_afiliado[:50]}..."
         
-        # Envia a prévia com os botões
         await update.message.reply_text(preview, reply_markup=InlineKeyboardMarkup(keyboard))
         
         # =========================
-        # ENVIA A IMAGEM
+        # ENVIA A IMAGEM (se encontrada)
         # =========================
-        try:
-            # Se for arquivo local, abre e envia
-            if isinstance(imagem, str) and imagem.startswith("/tmp/"):
-                with open(imagem, 'rb') as photo:
-                    await update.message.reply_photo(
-                        photo,
-                        caption=f"📸 Captura de tela: {titulo_limpo}"
-                    )
-                # Remove arquivo temporário
-                try:
-                    os.remove(imagem)
-                except:
-                    pass
-            else:
-                # Envia por URL
+        if imagem:
+            try:
                 await update.message.reply_photo(
                     imagem,
                     caption=f"📸 {titulo_limpo}"
                 )
-            logger.info(f"✅ Imagem enviada para {user_id}")
-        except Exception as e:
-            logger.error(f"❌ Erro ao enviar imagem: {e}")
-            await update.message.reply_text("⚠️ Não foi possível carregar a imagem.")
+                logger.info(f"✅ Imagem enviada para {user_id}")
+            except Exception as e:
+                logger.error(f"❌ Erro ao enviar imagem: {e}")
+                await update.message.reply_text("⚠️ Não foi possível carregar a imagem.")
+        else:
+            await update.message.reply_text("⚠️ Nenhuma imagem encontrada para este produto.")
             
     except Exception as e:
         logger.error(f"❌ Erro ao processar link: {e}")
@@ -147,27 +122,17 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # ENVIA PARA O CANAL
             # =========================
             if oferta.get("imagem"):
-                # Se for arquivo local
-                if isinstance(oferta["imagem"], str) and oferta["imagem"].startswith("/tmp/"):
-                    with open(oferta["imagem"], 'rb') as photo:
-                        await context.bot.send_photo(
-                            CHANNEL_ID,
-                            photo,
-                            caption=msg
-                        )
-                    try:
-                        os.remove(oferta["imagem"])
-                    except:
-                        pass
-                else:
-                    await context.bot.send_photo(
-                        CHANNEL_ID,
-                        oferta["imagem"],
-                        caption=msg
-                    )
+                await context.bot.send_photo(
+                    CHANNEL_ID,
+                    oferta["imagem"],
+                    caption=msg
+                )
                 logger.info(f"✅ Oferta publicada com imagem por {user_id}")
             else:
-                await context.bot.send_message(CHANNEL_ID, msg)
+                await context.bot.send_message(
+                    CHANNEL_ID,
+                    msg
+                )
                 logger.info(f"✅ Oferta publicada sem imagem por {user_id}")
             
             await query.edit_message_text("✅ **Publicado com sucesso!**")
