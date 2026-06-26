@@ -4,6 +4,7 @@ import re
 import json
 import tempfile
 import requests
+import urllib.parse
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
@@ -115,7 +116,6 @@ def extrair_preco(link: str):
     
     # Estratégia 1: DuckDuckGo
     try:
-        import urllib.parse
         encoded_link = urllib.parse.quote(link)
         api_url = f"https://api.duckduckgo.com/?q=price+{encoded_link}&format=json"
         response = requests.get(api_url, timeout=10)
@@ -172,7 +172,6 @@ def extrair_beneficio(link: str):
     
     # Estratégia 1: DuckDuckGo
     try:
-        import urllib.parse
         encoded_link = urllib.parse.quote(link)
         api_url = f"https://api.duckduckgo.com/?q={encoded_link}&format=json"
         response = requests.get(api_url, timeout=10)
@@ -214,132 +213,54 @@ def extrair_beneficio(link: str):
     return "Produto de alta qualidade com excelente custo-benefício"
 
 # =========================
-# FUNÇÃO: EXTRAIR IMAGEM DIRETA (COM BYPASS DE BLOQUEIO)
+# FUNÇÃO: BUSCAR IMAGEM NO GOOGLE IMAGES
 # =========================
 
-def extrair_imagem_direta(link: str):
-    """Tenta extrair a imagem real do produto com bypass de bloqueio"""
+def buscar_imagem_google(titulo: str):
+    """Busca a imagem do produto no Google Images usando o título"""
     try:
-        # Lista de User-Agents para tentar
-        user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        ]
+        # Limpa o título para busca
+        titulo_busca = titulo.replace("Tenis", "Tênis").replace("Masculino", "").strip()
+        query = urllib.parse.quote(f"{titulo_busca} produto")
         
-        for user_agent in user_agents:
-            try:
-                headers = {
-                    "User-Agent": user_agent,
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-                    "Accept-Encoding": "gzip, deflate, br",
-                    "Connection": "keep-alive",
-                    "Upgrade-Insecure-Requests": "1",
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "none",
-                    "Sec-Fetch-User": "?1",
-                    "Cache-Control": "max-age=0",
-                }
-                
-                logger.info(f"🔍 Tentando com User-Agent: {user_agent[:30]}...")
-                response = requests.get(link, headers=headers, timeout=15, allow_redirects=True)
-                
-                if response.status_code == 200:
-                    soup = BeautifulSoup(response.text, "html.parser")
-                    
-                    # 1. Open Graph (mais comum)
-                    og_image = soup.find("meta", property="og:image")
-                    if og_image and og_image.get("content"):
-                        url_imagem = og_image["content"]
-                        if url_imagem.startswith("http"):
-                            logger.info(f"✅ Imagem via OG: {url_imagem[:50]}...")
-                            return url_imagem
-                    
-                    # 2. Twitter Card
-                    tw_image = soup.find("meta", property="twitter:image")
-                    if tw_image and tw_image.get("content"):
-                        url_imagem = tw_image["content"]
-                        if url_imagem.startswith("http"):
-                            logger.info(f"✅ Imagem via Twitter: {url_imagem[:50]}...")
-                            return url_imagem
-                    
-                    # 3. JSON-LD
-                    script_tags = soup.find_all("script", type="application/ld+json")
-                    for script in script_tags:
-                        try:
-                            data = json.loads(script.string)
-                            if "image" in data:
-                                url_imagem = data["image"]
-                                if isinstance(url_imagem, str) and url_imagem.startswith("http"):
-                                    logger.info(f"✅ Imagem via JSON-LD: {url_imagem[:50]}...")
-                                    return url_imagem
-                                elif isinstance(url_imagem, list) and len(url_imagem) > 0:
-                                    for img in url_imagem:
-                                        if isinstance(img, str) and img.startswith("http"):
-                                            logger.info(f"✅ Imagem via JSON-LD: {img[:50]}...")
-                                            return img
-                        except:
-                            pass
-                    
-                    # 4. CSS Selectors específicos
-                    selectores = [
-                        "img[class*='product-image']",
-                        "img[class*='main-image']",
-                        "img[class*='product-img']",
-                        "img[class*='produto']",
-                        "img[itemprop='image']",
-                        "img[data-testid='product-image']",
-                        "img[data-image]",
-                        "img[data-src]",
-                        "img[class*='product-card']",
-                        "img[class*='product']",
-                        "img[class*='image']",
-                        "img[class*='photo']",
-                        "img[class*='gallery']",
-                        "img[class*='zoom']",
-                    ]
-                    
-                    for selector in selectores:
-                        img = soup.select_one(selector)
-                        if img:
-                            for attr in ["src", "data-src", "data-image", "content"]:
-                                url_imagem = img.get(attr)
-                                if url_imagem:
-                                    if url_imagem.startswith("http"):
-                                        if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
-                                            logger.info(f"✅ Imagem via CSS: {url_imagem[:50]}...")
-                                            return url_imagem
-                                    elif url_imagem.startswith("//"):
-                                        url_imagem = f"https:{url_imagem}"
-                                        if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
-                                            logger.info(f"✅ Imagem via CSS: {url_imagem[:50]}...")
-                                            return url_imagem
-                    
-                    # 5. Regex no HTML (último recurso)
-                    padroes = [
-                        r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"\']*)?',
-                        r'https?://[^\s"\']+product[^\s"\']+\.(?:jpg|jpeg|png|webp)',
-                        r'https?://[^\s"\']+image[^\s"\']+\.(?:jpg|jpeg|png|webp)',
-                        r'https?://[^\s"\']+imagem[^\s"\']+\.(?:jpg|jpeg|png|webp)',
-                    ]
-                    
-                    for padrao in padroes:
-                        matches = re.findall(padrao, response.text, re.IGNORECASE)
-                        for url_imagem in matches:
-                            if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
-                                if "thumbnail" not in url_imagem.lower():
-                                    logger.info(f"✅ Imagem via Regex: {url_imagem[:50]}...")
-                                    return url_imagem
-            except Exception as e:
-                logger.warning(f"⚠️ Tentativa com User-Agent falhou: {e}")
+        # Usa a API do Google (via serviço gratuito)
+        google_url = f"https://serpapi.com/search?q={query}&tbm=isch&api_key=YOUR_API_KEY"
+        
+        # Como não temos chave da SerpAPI, vamos usar uma abordagem alternativa
+        # Usamos o serviço do Google Custom Search (gratuito)
+        cse_url = f"https://cse.google.com/cse?q={query}"
+        
+        # Tenta usar o DuckDuckGo Image Search (gratuito)
+        ddg_url = f"https://duckduckgo.com/?q={query}&iax=images&ia=images"
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        
+        response = requests.get(ddg_url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            # Procura imagens nos resultados
+            imagens = soup.find_all("img", {"class": "tile--img__img"})
+            for img in imagens:
+                src = img.get("src")
+                if src and src.startswith("http") and "logo" not in src.lower():
+                    logger.info(f"✅ Imagem via DuckDuckGo: {src[:50]}...")
+                    return src
+            
+            # Tenta outro seletor
+            imagens = soup.select("img[data-src]")
+            for img in imagens:
+                src = img.get("data-src")
+                if src and src.startswith("http") and "logo" not in src.lower():
+                    logger.info(f"✅ Imagem via DuckDuckGo (data-src): {src[:50]}...")
+                    return src
         
         return None
         
     except Exception as e:
-        logger.error(f"❌ Erro ao extrair imagem direta: {e}")
+        logger.error(f"❌ Erro ao buscar imagem no Google: {e}")
         return None
 
 # =========================
@@ -347,9 +268,8 @@ def extrair_imagem_direta(link: str):
 # =========================
 
 def capturar_imagem_com_api(link: str):
-    """Usa API para capturar imagem (fallback se a direta falhar)"""
+    """Usa API para capturar imagem (fallback)"""
     try:
-        # Page2Images
         page2images_url = f"http://api.page2images.com/directlink?p2i_device=1&p2i_screen=1024x768&p2i_size=800x600&p2i_url={link}"
         response = requests.get(page2images_url, timeout=30)
         if response.status_code == 200:
@@ -361,19 +281,6 @@ def capturar_imagem_com_api(link: str):
     except Exception as e:
         logger.warning(f"⚠️ Falha no Page2Images: {e}")
     
-    # MiniWebTool
-    try:
-        fallback_url = f"https://api.miniwebtool.com/screenshot/?url={link}&width=800&height=600"
-        response = requests.get(fallback_url, timeout=30)
-        if response.status_code == 200:
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-            temp_file.write(response.content)
-            temp_file.close()
-            logger.info(f"✅ Captura de tela (MiniWebTool): {temp_file.name}")
-            return temp_file.name
-    except Exception as e:
-        logger.warning(f"⚠️ Falha no MiniWebTool: {e}")
-    
     return None
 
 # =========================
@@ -381,14 +288,17 @@ def capturar_imagem_com_api(link: str):
 # =========================
 
 def extrair_imagem(link: str):
-    """Extrai imagem do produto (prioridade: direta do site, fallback: API)"""
+    """Extrai imagem do produto (prioridade: Google Images, fallback: API)"""
     
-    # 1. Tenta extrair a imagem REAL do site
-    imagem = extrair_imagem_direta(link)
+    # Gera o título para busca
+    titulo = gerar_titulo(link)
+    
+    # 1. Tenta buscar a imagem no Google/DuckDuckGo
+    imagem = buscar_imagem_google(titulo)
     
     # 2. Se falhou, tenta captura de tela via API
     if not imagem:
-        logger.info("🔄 Imagem direta falhou, tentando captura de tela...")
+        logger.info("🔄 Google Images falhou, tentando captura de tela...")
         imagem = capturar_imagem_com_api(link)
     
     # 3. Se ainda falhou, retorna None
