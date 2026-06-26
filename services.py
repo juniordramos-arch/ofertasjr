@@ -215,36 +215,29 @@ def extrair_beneficio(link: str):
     return "Produto de alta qualidade com excelente custo-benefício"
 
 # =========================
-# FUNÇÃO: BAIXAR E SALVAR IMAGEM
+# FUNÇÃO: CONVERTER IMAGEM PARA JPEG
 # =========================
 
-def baixar_imagem(url_imagem: str):
-    """Baixa a imagem e salva em formato compatível com o Telegram"""
+def converter_para_jpeg(arquivo_entrada: str):
+    """Converte qualquer imagem para JPEG (compatível com Telegram)"""
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
+        # Abre a imagem
+        img = Image.open(arquivo_entrada)
         
-        response = requests.get(url_imagem, headers=headers, timeout=30)
-        if response.status_code == 200:
-            # Salva como arquivo temporário
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-            temp_file.write(response.content)
-            temp_file.close()
-            
-            # Verifica se é uma imagem válida
-            try:
-                img = Image.open(temp_file.name)
-                img.verify()
-                logger.info(f"✅ Imagem salva e verificada: {temp_file.name}")
-                return temp_file.name
-            except Exception as e:
-                logger.error(f"❌ Imagem inválida: {e}")
-                os.remove(temp_file.name)
-                return None
-                
+        # Converte para RGB (se for PNG com transparência)
+        if img.mode in ('RGBA', 'LA', 'P'):
+            img = img.convert('RGB')
+        
+        # Salva como JPEG
+        arquivo_saida = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        img.save(arquivo_saida.name, 'JPEG', quality=85, optimize=True)
+        arquivo_saida.close()
+        
+        logger.info(f"✅ Imagem convertida para JPEG: {arquivo_saida.name}")
+        return arquivo_saida.name
+        
     except Exception as e:
-        logger.error(f"❌ Erro ao baixar imagem: {e}")
+        logger.error(f"❌ Erro ao converter imagem: {e}")
         return None
 
 # =========================
@@ -263,15 +256,18 @@ def capturar_imagem_com_api(link: str):
             temp_file.write(response.content)
             temp_file.close()
             
-            # Verifica a imagem
-            try:
-                img = Image.open(temp_file.name)
-                img.verify()
-                logger.info(f"✅ Captura de tela salva: {temp_file.name}")
+            # Converte para JPEG (garante compatibilidade)
+            imagem_convertida = converter_para_jpeg(temp_file.name)
+            if imagem_convertida:
+                # Remove o arquivo original
+                try:
+                    os.remove(temp_file.name)
+                except:
+                    pass
+                logger.info(f"✅ Captura de tela convertida: {imagem_convertida}")
+                return imagem_convertida
+            else:
                 return temp_file.name
-            except:
-                os.remove(temp_file.name)
-                return None
     except Exception as e:
         logger.warning(f"⚠️ Falha no Page2Images: {e}")
     
@@ -282,20 +278,12 @@ def capturar_imagem_com_api(link: str):
 # =========================
 
 def extrair_imagem(link: str):
-    """Extrai imagem do produto (prioridade: Google Images, fallback: API)"""
+    """Extrai imagem do produto (prioridade: captura de tela, fallback: None)"""
     
-    # Gera o título para busca
-    titulo = gerar_titulo(link)
+    # 1. Tenta captura de tela via API
+    imagem = capturar_imagem_com_api(link)
     
-    # 1. Tenta buscar a imagem no Google/DuckDuckGo
-    imagem = buscar_imagem_google(titulo)
-    
-    # 2. Se falhou, tenta captura de tela via API
-    if not imagem:
-        logger.info("🔄 Google Images falhou, tentando captura de tela...")
-        imagem = capturar_imagem_com_api(link)
-    
-    # 3. Se ainda falhou, retorna None
+    # 2. Se ainda falhou, retorna None
     if not imagem:
         logger.error("❌ Nenhuma imagem encontrada")
     
@@ -304,46 +292,3 @@ def extrair_imagem(link: str):
     beneficio = extrair_beneficio(link)
     
     return imagem, preco, beneficio
-
-# =========================
-# FUNÇÃO: BUSCAR IMAGEM NO GOOGLE
-# =========================
-
-def buscar_imagem_google(titulo: str):
-    """Busca a imagem do produto usando DuckDuckGo API"""
-    try:
-        # Limpa o título
-        titulo_busca = titulo.replace("Tenis", "Tênis").replace("Masculino", "").replace("Feminino", "").strip()
-        query = urllib.parse.quote(f"{titulo_busca} produto")
-        
-        # DuckDuckGo Images API
-        ddg_url = f"https://duckduckgo.com/i.js?q={query}&iax=images&ia=images"
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "Referer": "https://duckduckgo.com/",
-        }
-        
-        response = requests.get(ddg_url, headers=headers, timeout=15)
-        if response.status_code == 200:
-            try:
-                data = response.json()
-                if "results" in data and len(data["results"]) > 0:
-                    for resultado in data["results"]:
-                        if "image" in resultado:
-                            url_imagem = resultado["image"]
-                            if url_imagem.startswith("http"):
-                                # Baixa e salva a imagem
-                                imagem_local = baixar_imagem(url_imagem)
-                                if imagem_local:
-                                    logger.info(f"✅ Imagem via DuckDuckGo: {url_imagem[:50]}...")
-                                    return imagem_local
-            except:
-                pass
-        
-        return None
-        
-    except Exception as e:
-        logger.error(f"❌ Erro ao buscar imagem: {e}")
-        return None
