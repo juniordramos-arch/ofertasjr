@@ -1,7 +1,6 @@
 import os
 from dotenv import load_dotenv
 
-# Carrega variáveis de ambiente
 load_dotenv()
 
 # =========================
@@ -31,7 +30,6 @@ if not AWIN_PUBLISHER_ID:
 PORT = os.getenv("PORT", "10000")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# Se WEBHOOK_URL não estiver definido, usa o nome do serviço no Render
 if not WEBHOOK_URL:
     service_name = os.getenv("RENDER_SERVICE_NAME", "ofertasjr")
     WEBHOOK_URL = f"https://{service_name}.onrender.com"
@@ -43,7 +41,7 @@ if not WEBHOOK_URL:
 
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "20"))
 IMAGE_TIMEOUT = int(os.getenv("IMAGE_TIMEOUT", "15"))
-MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
+MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
 # =========================
 # MAPEAMENTO AWIN
