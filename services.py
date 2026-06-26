@@ -1,6 +1,7 @@
 import requests
 import logging
 import re
+import json
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
@@ -71,7 +72,7 @@ def gerar_link_afiliado(link: str):
         return link
 
 def extrair_imagem(link: str):
-    """Extrai imagem do produto com múltiplas estratégias"""
+    """Extrai imagem do produto com múltiplas estratégias + fallback"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -81,7 +82,8 @@ def extrair_imagem(link: str):
         response = requests.get(link, headers=headers, timeout=15)
         response.raise_for_status()
         
-        soup = BeautifulSoup(response.text, "html.parser")
+        html = response.text
+        soup = BeautifulSoup(html, "html.parser")
         
         # =========================
         # ESTRATÉGIA 1: Open Graph
@@ -104,12 +106,11 @@ def extrair_imagem(link: str):
                 return url_imagem
         
         # =========================
-        # ESTRATÉGIA 3: JSON-LD (estrutura de dados)
+        # ESTRATÉGIA 3: JSON-LD
         # =========================
         script_tags = soup.find_all("script", type="application/ld+json")
         for script in script_tags:
             try:
-                import json
                 data = json.loads(script.string)
                 if "image" in data:
                     url_imagem = data["image"]
@@ -117,15 +118,36 @@ def extrair_imagem(link: str):
                         logger.info(f"✅ Imagem via JSON-LD: {url_imagem[:50]}...")
                         return url_imagem
                     elif isinstance(url_imagem, list) and len(url_imagem) > 0:
-                        url_imagem = url_imagem[0]
-                        if url_imagem.startswith("http"):
-                            logger.info(f"✅ Imagem via JSON-LD (lista): {url_imagem[:50]}...")
-                            return url_imagem
+                        for img in url_imagem:
+                            if isinstance(img, str) and img.startswith("http"):
+                                logger.info(f"✅ Imagem via JSON-LD (lista): {img[:50]}...")
+                                return img
             except:
                 pass
         
         # =========================
-        # ESTRATÉGIA 4: Imagem principal (CSS)
+        # ESTRATÉGIA 4: Nike específico
+        # =========================
+        if "nike.com" in link.lower():
+            # Nike usa imagens com padrão específico
+            padrao_nike = r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)[^\s"\']*(?:\?[^\s"\']*)?'
+            matches = re.findall(padrao_nike, html, re.IGNORECASE)
+            
+            # Filtra imagens de produto (exclui logos, ícones)
+            for url_imagem in matches:
+                if "product" in url_imagem.lower() or "image" in url_imagem.lower():
+                    if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
+                        logger.info(f"✅ Imagem Nike específica: {url_imagem[:50]}...")
+                        return url_imagem
+            
+            # Pega a primeira imagem grande
+            for url_imagem in matches:
+                if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
+                    logger.info(f"✅ Imagem Nike (fallback): {url_imagem[:50]}...")
+                    return url_imagem
+        
+        # =========================
+        # ESTRATÉGIA 5: Imagem principal (CSS)
         # =========================
         selectores = [
             "img[class*='product-image']",
@@ -139,17 +161,17 @@ def extrair_imagem(link: str):
             "img[class*='product-card']",
             "img[class*='product']",
             "img[class*='image']",
+            "img[class*='photo']",
         ]
         
         for selector in selectores:
             img = soup.select_one(selector)
             if img:
-                # Tenta vários atributos
                 for attr in ["src", "data-src", "data-image", "content"]:
                     url_imagem = img.get(attr)
                     if url_imagem:
                         if url_imagem.startswith("http"):
-                            logger.info(f"✅ Imagem via CSS ({attr}): {url_imagem[:50]}...")
+                            logger.info(f"✅ Imagem via CSS ({selector}): {url_imagem[:50]}...")
                             return url_imagem
                         elif url_imagem.startswith("//"):
                             url_imagem = f"https:{url_imagem}"
@@ -157,44 +179,35 @@ def extrair_imagem(link: str):
                             return url_imagem
         
         # =========================
-        # ESTRATÉGIA 5: Buscar qualquer imagem grande
+        # ESTRATÉGIA 6: Regex geral
         # =========================
-        images = soup.find_all("img")
-        for img in images:
-            url_imagem = img.get("src") or img.get("data-src")
-            if url_imagem:
-                if url_imagem.startswith("http") and "logo" not in url_imagem.lower():
-                    # Filtra imagens muito pequenas
-                    width = img.get("width")
-                    if width and int(width) > 100:
-                        logger.info(f"✅ Imagem via busca geral: {url_imagem[:50]}...")
-                        return url_imagem
-                    # Pega a primeira imagem grande
-                    if "product" in url_imagem.lower() or "image" in url_imagem.lower():
-                        logger.info(f"✅ Imagem via busca geral (produto): {url_imagem[:50]}...")
-                        return url_imagem
-        
-        # =========================
-        # ESTRATÉGIA 6: Regex no HTML (último recurso)
-        # =========================
-        html = response.text
         padroes = [
-            r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"\']*)?',
             r'https?://[^\s"\']+product[^\s"\']+\.(?:jpg|jpeg|png|webp)',
             r'https?://[^\s"\']+image[^\s"\']+\.(?:jpg|jpeg|png|webp)',
+            r'https?://[^\s"\']+imagem[^\s"\']+\.(?:jpg|jpeg|png|webp)',
+            r'https?://[^\s"\']+foto[^\s"\']+\.(?:jpg|jpeg|png|webp)',
+            r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"\']*)?',
         ]
         
         for padrao in padroes:
-            match = re.search(padrao, html, re.IGNORECASE)
-            if match:
-                url_imagem = match.group(0)
+            matches = re.findall(padrao, html, re.IGNORECASE)
+            for url_imagem in matches:
                 if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
-                    logger.info(f"✅ Imagem via Regex: {url_imagem[:50]}...")
-                    return url_imagem
+                    # Evita imagens muito pequenas
+                    if "thumbnail" not in url_imagem.lower():
+                        logger.info(f"✅ Imagem via Regex: {url_imagem[:50]}...")
+                        return url_imagem
         
         # =========================
-        # FALLBACK: Imagem padrão do site
+        # FALLBACK: Imagem padrão do site (favicon)
         # =========================
+        favicon = soup.find("link", rel="icon")
+        if favicon and favicon.get("href"):
+            url_imagem = favicon["href"]
+            if url_imagem.startswith("http"):
+                logger.info(f"ℹ️ Usando favicon como fallback: {url_imagem[:50]}...")
+                return url_imagem
+        
         logger.warning("⚠️ Nenhuma imagem encontrada")
         return None
         
@@ -204,6 +217,25 @@ def extrair_imagem(link: str):
     except Exception as e:
         logger.error(f"❌ Erro ao extrair imagem: {e}")
         return None
+
+def baixar_imagem_para_telegram(url_imagem: str):
+    """Verifica se a imagem é válida para enviar ao Telegram"""
+    try:
+        if not url_imagem:
+            return False
+        
+        # Verifica se a URL é acessível
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.head(url_imagem, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            content_type = response.headers.get("content-type", "")
+            if "image" in content_type:
+                return True
+        
+        return False
+    except:
+        return False
 
 def gerar_titulo(link: str):
     """Gera título a partir do link"""
@@ -221,7 +253,6 @@ def gerar_titulo(link: str):
         titulo = titulo.replace("-", " ").replace("_", " ").replace(".html", "").replace(".Html", "")
         
         # Remove números de ID
-        import re
         titulo = re.sub(r'\d+', '', titulo)
         titulo = re.sub(r'[^a-zA-ZÀ-ÿ\s]', '', titulo)
         
