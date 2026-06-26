@@ -1,7 +1,7 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from services import gerar_link_afiliado, extrair_imagem, gerar_titulo
+from services import gerar_link_afiliado, extrair_imagem, gerar_titulo, baixar_imagem_para_telegram
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +11,12 @@ logger = logging.getLogger(__name__)
 
 ofertas = {}
 aguardando_cupom = {}
+
+# =========================
+# IMAGEM PADRÃO (caso não encontre)
+# =========================
+
+IMAGEM_PADRAO = "https://via.placeholder.com/800x600/1a1a2e/FFFFFF?text=Oferta+JR+Pro"
 
 # =========================
 # HANDLERS
@@ -42,6 +48,18 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         titulo = gerar_titulo(text)
         imagem = extrair_imagem(text)
         
+        # =========================
+        # VERIFICA SE A IMAGEM É VÁLIDA
+        # =========================
+        imagem_valida = False
+        if imagem:
+            imagem_valida = await verificar_imagem(imagem)
+        
+        # Se não encontrou imagem válida, usa a padrão
+        if not imagem_valida:
+            imagem = IMAGEM_PADRAO
+            logger.info("🖼️ Usando imagem padrão")
+        
         # Remove extensões e caracteres especiais do título
         titulo_limpo = titulo.replace(".Html", "").replace(".html", "").strip()
         
@@ -61,41 +79,60 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         
         # =========================
-        # PRÉVIA - FORMATO SOLICITADO
+        # PRÉVIA
         # =========================
-        
         preview = f"🔥 **PRÉVIA DA OFERTA**\n\n"
-        preview += f"**{titulo_limpo}**\n\n"  # Sem a palavra "Título:"
+        preview += f"**{titulo_limpo}**\n\n"
         
-        if imagem:
-            preview += f"📸 Imagem encontrada ✅\n\n"
+        if imagem == IMAGEM_PADRAO:
+            preview += f"📸 Imagem padrão (fallback)\n\n"
         else:
-            preview += f"📸 Imagem não encontrada ❌\n\n"
+            preview += f"📸 Imagem encontrada ✅\n\n"
         
-        preview += f"🔗 {link_afiliado[:50]}..."  # Sem a palavra "Link"
+        preview += f"🔗 {link_afiliado[:50]}..."
         
         # Envia a prévia com os botões
         await update.message.reply_text(preview, reply_markup=InlineKeyboardMarkup(keyboard))
         
         # =========================
-        # ENVIA A IMAGEM SEPARADAMENTE (SE ENCONTRADA)
+        # ENVIA A IMAGEM
         # =========================
-        
-        if imagem:
+        try:
+            await update.message.reply_photo(
+                imagem,
+                caption=f"📸 {titulo_limpo}"
+            )
+            logger.info(f"✅ Imagem enviada para {user_id}")
+        except Exception as e:
+            logger.error(f"❌ Erro ao enviar imagem: {e}")
+            # Tenta enviar a imagem padrão se falhou
             try:
-                # Tenta baixar e enviar a imagem
                 await update.message.reply_photo(
-                    imagem,
-                    caption=f"📸 {titulo_limpo}"
+                    IMAGEM_PADRAO,
+                    caption="📸 Imagem padrão"
                 )
-                logger.info(f"✅ Imagem enviada para {user_id}")
-            except Exception as e:
-                logger.error(f"❌ Erro ao enviar imagem: {e}")
-                await update.message.reply_text("⚠️ Não foi possível carregar a imagem do produto.")
+            except:
+                await update.message.reply_text("⚠️ Não foi possível carregar a imagem.")
             
     except Exception as e:
         logger.error(f"❌ Erro ao processar link: {e}")
         await update.message.reply_text("❌ Erro ao processar o link. Verifique se é válido.")
+
+async def verificar_imagem(url: str):
+    """Verifica se a imagem é acessível"""
+    try:
+        import requests
+        response = requests.head(url, timeout=10)
+        if response.status_code == 200:
+            content_type = response.headers.get("content-type", "")
+            return "image" in content_type
+        return False
+    except:
+        return False
+
+# =========================
+# BUTTON CLICK (MANTIDO)
+# =========================
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Processa cliques nos botões"""
@@ -114,23 +151,20 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             from config import CHANNEL_ID
             
             # =========================
-            # MENSAGEM FINAL - FORMATO SOLICITADO
+            # MENSAGEM FINAL
             # =========================
-            
             msg = f"🔥 **OFERTA EXCLUSIVA**\n\n"
-            msg += f"**{oferta['titulo']}**\n\n"  # Sem "Título:"
+            msg += f"**{oferta['titulo']}**\n\n"
             
             if oferta.get("cupom"):
                 msg += f"🎟 **Cupom:** {oferta['cupom']}\n\n"
             
-            msg += f"🔗 {oferta['link']}"  # Sem a palavra "Link"
+            msg += f"🔗 {oferta['link']}"
             
             # =========================
             # ENVIA PARA O CANAL
             # =========================
-            
             if oferta.get("imagem"):
-                # Envia com imagem
                 await context.bot.send_photo(
                     CHANNEL_ID,
                     oferta["imagem"],
@@ -138,7 +172,6 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 logger.info(f"✅ Oferta publicada com imagem por {user_id}")
             else:
-                # Envia só texto
                 await context.bot.send_message(
                     CHANNEL_ID,
                     msg
@@ -151,7 +184,6 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"❌ Erro ao publicar: {e}")
             await query.edit_message_text(f"❌ Erro ao publicar: {str(e)}")
         
-        # Limpa cache
         ofertas.pop(user_id, None)
         
     elif query.data == "cupom":
