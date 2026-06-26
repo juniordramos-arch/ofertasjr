@@ -1,9 +1,10 @@
 import os
 import logging
-from flask import Flask, jsonify
+import asyncio
+from flask import Flask, jsonify, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
-from config import BOT_TOKEN, PORT, WEBHOOK_URL, CHANNEL_ID
+from config import BOT_TOKEN, PORT, WEBHOOK_URL
 from handlers import start, receive_link, button_click
 
 # =========================
@@ -27,7 +28,7 @@ def home():
     return jsonify({
         "status": "online",
         "bot": "OfertasJR Pro",
-        "version": "3.0.0"
+        "version": "3.0.1"
     })
 
 @flask_app.route('/health')
@@ -38,8 +39,15 @@ def health():
 def webhook():
     """Endpoint para o webhook do Telegram"""
     try:
-        update = Update.de_json(flask_app.request.get_json(force=True), bot_app.bot)
-        bot_app.process_update(update)
+        # Obtém os dados JSON da requisição
+        json_data = request.get_json(force=True)
+        
+        # Cria o objeto Update
+        update = Update.de_json(json_data, bot_app.bot)
+        
+        # Processa a atualização de forma assíncrona
+        asyncio.create_task(bot_app.process_update(update))
+        
         return jsonify({"status": "ok"})
     except Exception as e:
         logger.error(f"Erro no webhook: {e}")
@@ -65,7 +73,7 @@ def setup_bot():
 # =========================
 
 if __name__ == "__main__":
-    logger.info("🚀 Iniciando OfertasJR Pro...")
+    logger.info("🚀 Iniciando OfertasJR Pro v3.0.1...")
     
     # Configura o bot
     bot_app = setup_bot()
@@ -75,13 +83,27 @@ if __name__ == "__main__":
         logger.info("📡 Modo DEVELOPMENT - usando Polling")
         bot_app.run_polling()
     else:
-        logger.info(f"🌐 Modo PRODUCTION - usando Webhook em {WEBHOOK_URL}")
+        logger.info(f"🌐 Modo PRODUCTION - configurando Webhook em {WEBHOOK_URL}")
         
-        # Configura webhook
-        bot_app.bot.set_webhook(
-            url=f"{WEBHOOK_URL}/webhook",
-            drop_pending_updates=True
-        )
+        # Configura webhook de forma síncrona
+        import requests
+        webhook_url = f"{WEBHOOK_URL}/webhook"
+        
+        # Usa a API do Telegram diretamente
+        api_url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook"
+        response = requests.post(api_url, json={
+            "url": webhook_url,
+            "drop_pending_updates": True
+        })
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("ok"):
+                logger.info(f"✅ Webhook configurado com sucesso em: {webhook_url}")
+            else:
+                logger.error(f"❌ Erro ao configurar webhook: {result}")
+        else:
+            logger.error(f"❌ Erro ao configurar webhook: {response.status_code} - {response.text}")
         
         # Inicia Flask
         port = int(PORT)
