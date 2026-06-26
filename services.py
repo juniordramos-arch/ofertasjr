@@ -1,12 +1,42 @@
-import os  # <-- LINHA ADICIONADA
-import requests
+import os
 import logging
 import re
 import json
+import time
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 
 logger = logging.getLogger(__name__)
+
+# =========================
+# CONFIGURAÇÃO DO SELENIUM
+# =========================
+
+def criar_driver():
+    """Cria e configura o driver do Chrome em modo headless"""
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")  # Modo sem interface gráfica
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    
+    try:
+        # Tenta usar o driver gerenciado automaticamente
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        return driver
+    except Exception as e:
+        logger.error(f"❌ Erro ao criar driver: {e}")
+        return None
 
 # =========================
 # AWIN - MAPEAMENTO
@@ -27,52 +57,6 @@ AWIN_ADVERTISERS = {
     "underarmour.com": 18864,
     "jbl.com": 118761,
 }
-
-# =========================
-# API DE CAPTURA DE TELA (GRATUITA)
-# =========================
-
-SCREENSHOT_API_KEY = os.getenv("SCREENSHOT_API_KEY", "")  # Opcional
-SCREENSHOT_API_URL = "https://api.screenshotapi.net/screenshot"
-
-def capturar_tela_site(url: str):
-    """Captura a tela do site usando API gratuita"""
-    try:
-        # Tenta usar a API do ScreenshotAPI
-        if SCREENSHOT_API_KEY:
-            params = {
-                "url": url,
-                "token": SCREENSHOT_API_KEY,
-                "width": 800,
-                "height": 600,
-                "output": "image",
-                "format": "png"
-            }
-            response = requests.get(SCREENSHOT_API_URL, params=params, timeout=30)
-            if response.status_code == 200:
-                import tempfile
-                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-                temp_file.write(response.content)
-                temp_file.close()
-                logger.info(f"✅ Captura de tela salva: {temp_file.name}")
-                return temp_file.name
-        
-        # Fallback: tenta o serviço gratuito do MiniWebTool
-        fallback_url = f"https://api.miniwebtool.com/screenshot/?url={url}&width=800&height=600"
-        response = requests.get(fallback_url, timeout=30)
-        if response.status_code == 200:
-            import tempfile
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-            temp_file.write(response.content)
-            temp_file.close()
-            logger.info(f"✅ Captura de tela (fallback): {temp_file.name}")
-            return temp_file.name
-        
-        return None
-        
-    except Exception as e:
-        logger.error(f"❌ Erro na captura de tela: {e}")
-        return None
 
 # =========================
 # FUNÇÕES
@@ -118,83 +102,106 @@ def gerar_link_afiliado(link: str):
         logger.error(f"❌ Erro AWIN: {e}")
         return link
 
-def extrair_imagem(link: str):
-    """Extrai imagem do produto usando múltiplas estratégias"""
-    
-    # =========================
-    # ESTRATÉGIA 1: Tentar captura de tela (mais confiável)
-    # =========================
-    logger.info(f"📸 Tentando captura de tela para: {link}")
-    screenshot = capturar_tela_site(link)
-    if screenshot:
-        return screenshot
-    
-    # =========================
-    # ESTRATÉGIA 2: Extrair do HTML
-    # =========================
+def extrair_imagem_com_selenium(link: str):
+    """Extrai a imagem do produto usando Selenium (renderiza JavaScript)"""
+    driver = None
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
+        logger.info(f"📸 Iniciando Selenium para: {link}")
+        driver = criar_driver()
         
-        logger.info(f"🔍 Buscando imagem no HTML para: {link}")
-        response = requests.get(link, headers=headers, timeout=15)
-        response.raise_for_status()
+        if not driver:
+            logger.error("❌ Falha ao criar driver Selenium")
+            return None
         
-        html = response.text
-        soup = BeautifulSoup(html, "html.parser")
+        # Carrega a página
+        driver.get(link)
         
-        # Open Graph
-        og_image = soup.find("meta", property="og:image")
-        if og_image and og_image.get("content"):
-            url_imagem = og_image["content"]
-            if url_imagem.startswith("http"):
-                logger.info(f"✅ Imagem via OG: {url_imagem[:50]}...")
-                return url_imagem
+        # Aguarda o carregamento da página
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.TAG_NAME, "body"))
+        )
         
-        # Twitter Card
-        tw_image = soup.find("meta", property="twitter:image")
-        if tw_image and tw_image.get("content"):
-            url_imagem = tw_image["content"]
-            if url_imagem.startswith("http"):
-                logger.info(f"✅ Imagem via Twitter: {url_imagem[:50]}...")
-                return url_imagem
+        # Aguarda imagens carregarem (tempo extra)
+        time.sleep(3)
         
-        # JSON-LD
-        script_tags = soup.find_all("script", type="application/ld+json")
-        for script in script_tags:
-            try:
-                data = json.loads(script.string)
-                if "image" in data:
-                    url_imagem = data["image"]
-                    if isinstance(url_imagem, str) and url_imagem.startswith("http"):
-                        logger.info(f"✅ Imagem via JSON-LD: {url_imagem[:50]}...")
-                        return url_imagem
-                    elif isinstance(url_imagem, list) and len(url_imagem) > 0:
-                        for img in url_imagem:
-                            if isinstance(img, str) and img.startswith("http"):
-                                logger.info(f"✅ Imagem via JSON-LD (lista): {img[:50]}...")
-                                return img
-            except:
-                pass
-        
-        # Nike específico
-        if "nike.com" in link.lower():
-            padrao_nike = r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)[^\s"\']*(?:\?[^\s"\']*)?'
-            matches = re.findall(padrao_nike, html, re.IGNORECASE)
-            
-            for url_imagem in matches:
-                if "product" in url_imagem.lower() or "image" in url_imagem.lower():
-                    if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
-                        logger.info(f"✅ Imagem Nike específica: {url_imagem[:50]}...")
-                        return url_imagem
-            
-            for url_imagem in matches:
-                if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
-                    logger.info(f"✅ Imagem Nike (fallback): {url_imagem[:50]}...")
+        # =========================
+        # ESTRATÉGIA 1: Open Graph (via meta tags)
+        # =========================
+        try:
+            og_image = driver.find_element(By.XPATH, "//meta[@property='og:image']")
+            if og_image:
+                url_imagem = og_image.get_attribute("content")
+                if url_imagem and url_imagem.startswith("http"):
+                    logger.info(f"✅ Imagem via OG (Selenium): {url_imagem[:50]}...")
                     return url_imagem
+        except:
+            pass
         
-        # CSS Selectors
+        # =========================
+        # ESTRATÉGIA 2: Twitter Card
+        # =========================
+        try:
+            tw_image = driver.find_element(By.XPATH, "//meta[@property='twitter:image']")
+            if tw_image:
+                url_imagem = tw_image.get_attribute("content")
+                if url_imagem and url_imagem.startswith("http"):
+                    logger.info(f"✅ Imagem via Twitter (Selenium): {url_imagem[:50]}...")
+                    return url_imagem
+        except:
+            pass
+        
+        # =========================
+        # ESTRATÉGIA 3: Imagens do produto (JavaScript)
+        # =========================
+        # Usa JavaScript para encontrar imagens grandes
+        script_js = """
+        function encontrarImagemProduto() {
+            // Pega todas as imagens
+            const imagens = document.querySelectorAll('img');
+            const imagensFiltradas = [];
+            
+            // Filtra imagens grandes (mais de 200px)
+            for (let img of imagens) {
+                const width = img.naturalWidth || img.width || 0;
+                const height = img.naturalHeight || img.height || 0;
+                
+                // Ignora logos, ícones, etc.
+                const src = img.src || '';
+                if (src.includes('logo') || src.includes('icon') || src.includes('avatar')) {
+                    continue;
+                }
+                
+                // Se for grande, considera
+                if (width > 200 || height > 200) {
+                    imagensFiltradas.push({
+                        src: src,
+                        width: width,
+                        height: height,
+                        area: width * height
+                    });
+                }
+            }
+            
+            // Ordena por área (maior primeiro)
+            imagensFiltradas.sort((a, b) => b.area - a.area);
+            
+            // Retorna a maior imagem
+            if (imagensFiltradas.length > 0) {
+                return imagensFiltradas[0].src;
+            }
+            return null;
+        }
+        return encontrarImagemProduto();
+        """
+        
+        url_imagem = driver.execute_script(script_js)
+        if url_imagem and url_imagem.startswith("http"):
+            logger.info(f"✅ Imagem via JavaScript (Selenium): {url_imagem[:50]}...")
+            return url_imagem
+        
+        # =========================
+        # ESTRATÉGIA 4: CSS Selectors
+        # =========================
         selectores = [
             "img[class*='product-image']",
             "img[class*='main-image']",
@@ -203,7 +210,6 @@ def extrair_imagem(link: str):
             "img[itemprop='image']",
             "img[data-testid='product-image']",
             "img[data-image]",
-            "img[data-src]",
             "img[class*='product-card']",
             "img[class*='product']",
             "img[class*='image']",
@@ -211,26 +217,26 @@ def extrair_imagem(link: str):
         ]
         
         for selector in selectores:
-            img = soup.select_one(selector)
-            if img:
-                for attr in ["src", "data-src", "data-image", "content"]:
-                    url_imagem = img.get(attr)
-                    if url_imagem:
-                        if url_imagem.startswith("http"):
-                            logger.info(f"✅ Imagem via CSS ({selector}): {url_imagem[:50]}...")
+            try:
+                elementos = driver.find_elements(By.CSS_SELECTOR, selector)
+                for elemento in elementos:
+                    url_imagem = elemento.get_attribute("src") or elemento.get_attribute("data-src")
+                    if url_imagem and url_imagem.startswith("http"):
+                        # Ignora imagens pequenas
+                        if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
+                            logger.info(f"✅ Imagem via CSS (Selenium): {url_imagem[:50]}...")
                             return url_imagem
-                        elif url_imagem.startswith("//"):
-                            url_imagem = f"https:{url_imagem}"
-                            logger.info(f"✅ Imagem via CSS (HTTPS): {url_imagem[:50]}...")
-                            return url_imagem
+            except:
+                pass
         
-        # Regex geral
+        # =========================
+        # ESTRATÉGIA 5: Regex no HTML renderizado
+        # =========================
+        html = driver.page_source
         padroes = [
+            r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"\']*)?',
             r'https?://[^\s"\']+product[^\s"\']+\.(?:jpg|jpeg|png|webp)',
             r'https?://[^\s"\']+image[^\s"\']+\.(?:jpg|jpeg|png|webp)',
-            r'https?://[^\s"\']+imagem[^\s"\']+\.(?:jpg|jpeg|png|webp)',
-            r'https?://[^\s"\']+foto[^\s"\']+\.(?:jpg|jpeg|png|webp)',
-            r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"\']*)?',
         ]
         
         for padrao in padroes:
@@ -238,35 +244,93 @@ def extrair_imagem(link: str):
             for url_imagem in matches:
                 if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
                     if "thumbnail" not in url_imagem.lower():
-                        logger.info(f"✅ Imagem via Regex: {url_imagem[:50]}...")
+                        logger.info(f"✅ Imagem via Regex (Selenium): {url_imagem[:50]}...")
                         return url_imagem
         
+        logger.warning("⚠️ Nenhuma imagem encontrada com Selenium")
         return None
         
     except Exception as e:
-        logger.error(f"❌ Erro ao extrair imagem: {e}")
+        logger.error(f"❌ Erro no Selenium: {e}")
         return None
+    finally:
+        if driver:
+            driver.quit()
+            logger.info("🔒 Driver Selenium fechado")
 
-def baixar_imagem_para_telegram(url_imagem: str):
-    """Verifica se a imagem é válida para enviar ao Telegram"""
+def extrair_imagem(link: str):
+    """Extrai imagem do produto - PRIORIDADE: Selenium + fallback BeautifulSoup"""
+    
+    # =========================
+    # TENTATIVA 1: Selenium (renderiza JavaScript)
+    # =========================
+    logger.info(f"📸 Tentando Selenium para: {link}")
+    imagem = extrair_imagem_com_selenium(link)
+    
+    if imagem:
+        logger.info(f"✅ Imagem encontrada com Selenium: {imagem[:50]}...")
+        return imagem
+    
+    # =========================
+    # TENTATIVA 2: BeautifulSoup (fallback)
+    # =========================
+    logger.info(f"🔍 Fallback: BeautifulSoup para: {link}")
     try:
-        if not url_imagem:
-            return False
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
         
-        if url_imagem.startswith("/tmp/"):
-            return True
+        response = requests.get(link, headers=headers, timeout=15)
+        response.raise_for_status()
         
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.head(url_imagem, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.text, "html.parser")
         
-        if response.status_code == 200:
-            content_type = response.headers.get("content-type", "")
-            if "image" in content_type:
-                return True
+        # Open Graph
+        og_image = soup.find("meta", property="og:image")
+        if og_image and og_image.get("content"):
+            url_imagem = og_image["content"]
+            if url_imagem.startswith("http"):
+                logger.info(f"✅ Imagem via OG (fallback): {url_imagem[:50]}...")
+                return url_imagem
         
-        return False
-    except:
-        return False
+        # Twitter Card
+        tw_image = soup.find("meta", property="twitter:image")
+        if tw_image and tw_image.get("content"):
+            url_imagem = tw_image["content"]
+            if url_imagem.startswith("http"):
+                logger.info(f"✅ Imagem via Twitter (fallback): {url_imagem[:50]}...")
+                return url_imagem
+        
+        # CSS Selectors
+        selectores = [
+            "img[class*='product-image']",
+            "img[class*='main-image']",
+            "img[class*='product-img']",
+            "img[class*='produto']",
+            "img[itemprop='image']",
+        ]
+        
+        for selector in selectores:
+            img = soup.select_one(selector)
+            if img:
+                url_imagem = img.get("src") or img.get("data-src")
+                if url_imagem:
+                    if url_imagem.startswith("http"):
+                        logger.info(f"✅ Imagem via CSS (fallback): {url_imagem[:50]}...")
+                        return url_imagem
+                    elif url_imagem.startswith("//"):
+                        url_imagem = f"https:{url_imagem}"
+                        logger.info(f"✅ Imagem via CSS (fallback HTTPS): {url_imagem[:50]}...")
+                        return url_imagem
+        
+    except Exception as e:
+        logger.error(f"❌ Erro no fallback BeautifulSoup: {e}")
+    
+    # =========================
+    # SE NADA FUNCIONOU
+    # =========================
+    logger.error("❌ NENHUMA IMAGEM ENCONTRADA!")
+    return None
 
 def gerar_titulo(link: str):
     """Gera título a partir do link"""
