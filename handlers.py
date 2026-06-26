@@ -85,7 +85,7 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Erro ao processar o link. Verifique se é válido.")
 
 # =========================
-# MOSTRA PRÉVIA (SEM ASTERISCOS)
+# MOSTRA PRÉVIA
 # =========================
 
 async def mostrar_previa(update: Update, user_id: int, oferta: dict):
@@ -138,7 +138,7 @@ async def mostrar_previa(update: Update, user_id: int, oferta: dict):
         )
 
 # =========================
-# BOTÕES (SEM ASTERISCOS)
+# BOTÕES (CORRIGIDO)
 # =========================
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -150,7 +150,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if query.data == "publicar":
         if not oferta:
-            await query.edit_message_text("❌ Nenhuma oferta encontrada.")
+            try:
+                await query.edit_message_text("❌ Nenhuma oferta encontrada.")
+            except:
+                await query.message.reply_text("❌ Nenhuma oferta encontrada.")
             return
         
         try:
@@ -191,22 +194,50 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(CHANNEL_ID, mensagem)
                 logger.info(f"✅ Oferta publicada sem imagem por {user_id}")
             
-            await query.edit_message_text("✅ Publicado com sucesso!")
+            # Confirma para o usuário (com fallback)
+            try:
+                await query.edit_message_text("✅ Publicado com sucesso!")
+            except:
+                try:
+                    await query.message.reply_text("✅ Publicado com sucesso!")
+                except:
+                    pass
             
         except Exception as e:
             logger.error(f"❌ Erro ao publicar: {e}")
-            await query.edit_message_text(f"❌ Erro ao publicar: {str(e)}")
+            try:
+                await query.edit_message_text(f"❌ Erro ao publicar: {str(e)}")
+            except:
+                try:
+                    await query.message.reply_text(f"❌ Erro ao publicar: {str(e)}")
+                except:
+                    pass
         
         ofertas.pop(user_id, None)
     
     elif query.data == "cupom":
         aguardando_cupom[user_id] = True
-        await query.edit_message_text(
-            "🎟 Envie o código do cupom:\n\n"
-            "Digite apenas o código (ex: OFERTA10)"
-        )
+        try:
+            await query.edit_message_text(
+                "🎟 Envie o código do cupom:\n\n"
+                "Digite apenas o código (ex: OFERTA10)"
+            )
+        except:
+            try:
+                await query.message.reply_text(
+                    "🎟 Envie o código do cupom:\n\n"
+                    "Digite apenas o código (ex: OFERTA10)"
+                )
+            except:
+                pass
     
     elif query.data == "cancelar":
         ofertas.pop(user_id, None)
         aguardando_cupom.pop(user_id, None)
-        await query.edit_message_text("❌ Oferta cancelada.")
+        try:
+            await query.edit_message_text("❌ Oferta cancelada.")
+        except:
+            try:
+                await query.message.reply_text("❌ Oferta cancelada.")
+            except:
+                pass
