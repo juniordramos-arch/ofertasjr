@@ -70,15 +70,56 @@ def gerar_link_afiliado(link: str):
         return link
 
 def extrair_imagem(link: str):
+    """Extrai imagem do produto com múltiplas estratégias"""
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        
         response = requests.get(link, headers=headers, timeout=15)
+        response.raise_for_status()
+        
         soup = BeautifulSoup(response.text, "html.parser")
         
+        # Estratégia 1: Open Graph
         og_image = soup.find("meta", property="og:image")
         if og_image and og_image.get("content"):
-            return og_image["content"]
+            url_imagem = og_image["content"]
+            if url_imagem.startswith("http"):
+                logger.info(f"✅ Imagem via OG: {url_imagem[:50]}...")
+                return url_imagem
         
+        # Estratégia 2: Twitter Card
+        tw_image = soup.find("meta", property="twitter:image")
+        if tw_image and tw_image.get("content"):
+            url_imagem = tw_image["content"]
+            if url_imagem.startswith("http"):
+                logger.info(f"✅ Imagem via Twitter: {url_imagem[:50]}...")
+                return url_imagem
+        
+        # Estratégia 3: Imagem principal do produto
+        selectores = [
+            "img[class*='product-image']",
+            "img[class*='main-image']",
+            "img[class*='product-img']",
+            "img[class*='produto']",
+            "img[itemprop='image']",
+            "img[data-testid='product-image']"
+        ]
+        
+        for selector in selectores:
+            img = soup.select_one(selector)
+            if img and img.get("src"):
+                url_imagem = img["src"]
+                if url_imagem.startswith("http"):
+                    logger.info(f"✅ Imagem via CSS: {url_imagem[:50]}...")
+                    return url_imagem
+                elif url_imagem.startswith("//"):
+                    url_imagem = f"https:{url_imagem}"
+                    logger.info(f"✅ Imagem via CSS (HTTPS): {url_imagem[:50]}...")
+                    return url_imagem
+        
+        logger.warning("⚠️ Nenhuma imagem encontrada")
         return None
         
     except Exception as e:
@@ -86,6 +127,7 @@ def extrair_imagem(link: str):
         return None
 
 def gerar_titulo(link: str):
+    """Gera título a partir do link"""
     try:
         parsed = urlparse(link)
         path = parsed.path.strip("/")
@@ -93,16 +135,24 @@ def gerar_titulo(link: str):
         if not path:
             return "Produto"
         
+        # Pega o último segmento
         titulo = path.split("/")[-1]
-        titulo = titulo.replace("-", " ").replace("_", " ")
         
+        # Remove extensões e caracteres especiais
+        titulo = titulo.replace("-", " ").replace("_", " ").replace(".html", "").replace(".Html", "")
+        
+        # Remove números de ID
         import re
         titulo = re.sub(r'\d+', '', titulo)
+        titulo = re.sub(r'[^a-zA-ZÀ-ÿ\s]', '', titulo)
+        
+        # Capitaliza
         titulo = titulo.strip().title()
         
-        if not titulo:
+        if not titulo or len(titulo) < 3:
             titulo = parsed.netloc.replace("www.", "").split(".")[0].title()
         
+        logger.info(f"📝 Título gerado: {titulo}")
         return titulo
         
     except Exception as e:
