@@ -2,6 +2,7 @@ import os
 import logging
 import time
 import threading
+import asyncio
 from flask import Flask, jsonify
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
@@ -48,8 +49,9 @@ def home():
     return jsonify({
         "status": "online",
         "bot": "OfertasJR Pro",
-        "version": "3.0.8",
-        "mode": "polling"
+        "version": "3.0.9",
+        "mode": "polling",
+        "python": "3.11"
     })
 
 @flask_app.route('/health')
@@ -64,11 +66,11 @@ def run_flask():
         logger.error(f"❌ Erro no Flask: {e}")
 
 # =========================
-# FUNÇÃO PRINCIPAL DO BOT
+# FUNÇÃO PRINCIPAL DO BOT (COM ASYNCIO)
 # =========================
 
-def run_bot():
-    """Configura e inicia o bot"""
+async def run_bot_async():
+    """Configura e inicia o bot de forma assíncrona"""
     try:
         logger.info("🚀 Iniciando configuração do bot...")
         
@@ -91,10 +93,26 @@ def run_bot():
         
         # Inicia polling
         logger.info("🚀 Bot iniciado em modo Polling. Aguardando mensagens...")
-        application.run_polling()
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
         
+        # Mantém o bot rodando
+        while True:
+            await asyncio.sleep(1)
+            
     except Exception as e:
         logger.error(f"❌ Erro fatal no bot: {e}")
+        raise
+
+def run_bot():
+    """Wrapper síncrono para rodar o bot"""
+    try:
+        asyncio.run(run_bot_async())
+    except KeyboardInterrupt:
+        logger.info("🛑 Bot interrompido pelo usuário")
+    except Exception as e:
+        logger.error(f"❌ Erro ao rodar bot: {e}")
         raise
 
 # =========================
@@ -102,7 +120,7 @@ def run_bot():
 # =========================
 
 if __name__ == "__main__":
-    logger.info("🚀 Iniciando OfertasJR Pro v3.0.8...")
+    logger.info("🚀 Iniciando OfertasJR Pro v3.0.9...")
     
     # Inicia Flask em thread separada
     flask_thread = threading.Thread(target=run_flask, daemon=True)
