@@ -1,3 +1,4 @@
+import os  # <-- LINHA ADICIONADA
 import requests
 import logging
 import re
@@ -31,7 +32,6 @@ AWIN_ADVERTISERS = {
 # API DE CAPTURA DE TELA (GRATUITA)
 # =========================
 
-# Usamos a API do ScreenshotAPI (gratuita até 100 capturas/mês)
 SCREENSHOT_API_KEY = os.getenv("SCREENSHOT_API_KEY", "")  # Opcional
 SCREENSHOT_API_URL = "https://api.screenshotapi.net/screenshot"
 
@@ -50,9 +50,7 @@ def capturar_tela_site(url: str):
             }
             response = requests.get(SCREENSHOT_API_URL, params=params, timeout=30)
             if response.status_code == 200:
-                # Salva a imagem temporariamente
                 import tempfile
-                import os
                 temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
                 temp_file.write(response.content)
                 temp_file.close()
@@ -146,8 +144,104 @@ def extrair_imagem(link: str):
         html = response.text
         soup = BeautifulSoup(html, "html.parser")
         
-        # Tenta várias estratégias (mantidas do código anterior)
-        # ... (código de extração do HTML mantido)
+        # Open Graph
+        og_image = soup.find("meta", property="og:image")
+        if og_image and og_image.get("content"):
+            url_imagem = og_image["content"]
+            if url_imagem.startswith("http"):
+                logger.info(f"✅ Imagem via OG: {url_imagem[:50]}...")
+                return url_imagem
+        
+        # Twitter Card
+        tw_image = soup.find("meta", property="twitter:image")
+        if tw_image and tw_image.get("content"):
+            url_imagem = tw_image["content"]
+            if url_imagem.startswith("http"):
+                logger.info(f"✅ Imagem via Twitter: {url_imagem[:50]}...")
+                return url_imagem
+        
+        # JSON-LD
+        script_tags = soup.find_all("script", type="application/ld+json")
+        for script in script_tags:
+            try:
+                data = json.loads(script.string)
+                if "image" in data:
+                    url_imagem = data["image"]
+                    if isinstance(url_imagem, str) and url_imagem.startswith("http"):
+                        logger.info(f"✅ Imagem via JSON-LD: {url_imagem[:50]}...")
+                        return url_imagem
+                    elif isinstance(url_imagem, list) and len(url_imagem) > 0:
+                        for img in url_imagem:
+                            if isinstance(img, str) and img.startswith("http"):
+                                logger.info(f"✅ Imagem via JSON-LD (lista): {img[:50]}...")
+                                return img
+            except:
+                pass
+        
+        # Nike específico
+        if "nike.com" in link.lower():
+            padrao_nike = r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)[^\s"\']*(?:\?[^\s"\']*)?'
+            matches = re.findall(padrao_nike, html, re.IGNORECASE)
+            
+            for url_imagem in matches:
+                if "product" in url_imagem.lower() or "image" in url_imagem.lower():
+                    if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
+                        logger.info(f"✅ Imagem Nike específica: {url_imagem[:50]}...")
+                        return url_imagem
+            
+            for url_imagem in matches:
+                if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
+                    logger.info(f"✅ Imagem Nike (fallback): {url_imagem[:50]}...")
+                    return url_imagem
+        
+        # CSS Selectors
+        selectores = [
+            "img[class*='product-image']",
+            "img[class*='main-image']",
+            "img[class*='product-img']",
+            "img[class*='produto']",
+            "img[itemprop='image']",
+            "img[data-testid='product-image']",
+            "img[data-image]",
+            "img[data-src]",
+            "img[class*='product-card']",
+            "img[class*='product']",
+            "img[class*='image']",
+            "img[class*='photo']",
+        ]
+        
+        for selector in selectores:
+            img = soup.select_one(selector)
+            if img:
+                for attr in ["src", "data-src", "data-image", "content"]:
+                    url_imagem = img.get(attr)
+                    if url_imagem:
+                        if url_imagem.startswith("http"):
+                            logger.info(f"✅ Imagem via CSS ({selector}): {url_imagem[:50]}...")
+                            return url_imagem
+                        elif url_imagem.startswith("//"):
+                            url_imagem = f"https:{url_imagem}"
+                            logger.info(f"✅ Imagem via CSS (HTTPS): {url_imagem[:50]}...")
+                            return url_imagem
+        
+        # Regex geral
+        padroes = [
+            r'https?://[^\s"\']+product[^\s"\']+\.(?:jpg|jpeg|png|webp)',
+            r'https?://[^\s"\']+image[^\s"\']+\.(?:jpg|jpeg|png|webp)',
+            r'https?://[^\s"\']+imagem[^\s"\']+\.(?:jpg|jpeg|png|webp)',
+            r'https?://[^\s"\']+foto[^\s"\']+\.(?:jpg|jpeg|png|webp)',
+            r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"\']*)?',
+        ]
+        
+        for padrao in padroes:
+            matches = re.findall(padrao, html, re.IGNORECASE)
+            for url_imagem in matches:
+                if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
+                    if "thumbnail" not in url_imagem.lower():
+                        logger.info(f"✅ Imagem via Regex: {url_imagem[:50]}...")
+                        return url_imagem
+        
+        return None
         
     except Exception as e:
         logger.error(f"❌ Erro ao extrair imagem: {e}")
@@ -159,11 +253,9 @@ def baixar_imagem_para_telegram(url_imagem: str):
         if not url_imagem:
             return False
         
-        # Se for arquivo local, retorna True
         if url_imagem.startswith("/tmp/"):
             return True
         
-        # Verifica se a URL é acessível
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.head(url_imagem, headers=headers, timeout=10)
         
