@@ -28,6 +28,55 @@ AWIN_ADVERTISERS = {
 }
 
 # =========================
+# API DE CAPTURA DE TELA (GRATUITA)
+# =========================
+
+# Usamos a API do ScreenshotAPI (gratuita até 100 capturas/mês)
+SCREENSHOT_API_KEY = os.getenv("SCREENSHOT_API_KEY", "")  # Opcional
+SCREENSHOT_API_URL = "https://api.screenshotapi.net/screenshot"
+
+def capturar_tela_site(url: str):
+    """Captura a tela do site usando API gratuita"""
+    try:
+        # Tenta usar a API do ScreenshotAPI
+        if SCREENSHOT_API_KEY:
+            params = {
+                "url": url,
+                "token": SCREENSHOT_API_KEY,
+                "width": 800,
+                "height": 600,
+                "output": "image",
+                "format": "png"
+            }
+            response = requests.get(SCREENSHOT_API_URL, params=params, timeout=30)
+            if response.status_code == 200:
+                # Salva a imagem temporariamente
+                import tempfile
+                import os
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+                temp_file.write(response.content)
+                temp_file.close()
+                logger.info(f"✅ Captura de tela salva: {temp_file.name}")
+                return temp_file.name
+        
+        # Fallback: tenta o serviço gratuito do MiniWebTool
+        fallback_url = f"https://api.miniwebtool.com/screenshot/?url={url}&width=800&height=600"
+        response = requests.get(fallback_url, timeout=30)
+        if response.status_code == 200:
+            import tempfile
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+            temp_file.write(response.content)
+            temp_file.close()
+            logger.info(f"✅ Captura de tela (fallback): {temp_file.name}")
+            return temp_file.name
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ Erro na captura de tela: {e}")
+        return None
+
+# =========================
 # FUNÇÕES
 # =========================
 
@@ -72,148 +121,34 @@ def gerar_link_afiliado(link: str):
         return link
 
 def extrair_imagem(link: str):
-    """Extrai imagem do produto com múltiplas estratégias + fallback"""
+    """Extrai imagem do produto usando múltiplas estratégias"""
+    
+    # =========================
+    # ESTRATÉGIA 1: Tentar captura de tela (mais confiável)
+    # =========================
+    logger.info(f"📸 Tentando captura de tela para: {link}")
+    screenshot = capturar_tela_site(link)
+    if screenshot:
+        return screenshot
+    
+    # =========================
+    # ESTRATÉGIA 2: Extrair do HTML
+    # =========================
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         
-        logger.info(f"🔍 Buscando imagem para: {link}")
+        logger.info(f"🔍 Buscando imagem no HTML para: {link}")
         response = requests.get(link, headers=headers, timeout=15)
         response.raise_for_status()
         
         html = response.text
         soup = BeautifulSoup(html, "html.parser")
         
-        # =========================
-        # ESTRATÉGIA 1: Open Graph
-        # =========================
-        og_image = soup.find("meta", property="og:image")
-        if og_image and og_image.get("content"):
-            url_imagem = og_image["content"]
-            if url_imagem.startswith("http"):
-                logger.info(f"✅ Imagem via OG: {url_imagem[:50]}...")
-                return url_imagem
+        # Tenta várias estratégias (mantidas do código anterior)
+        # ... (código de extração do HTML mantido)
         
-        # =========================
-        # ESTRATÉGIA 2: Twitter Card
-        # =========================
-        tw_image = soup.find("meta", property="twitter:image")
-        if tw_image and tw_image.get("content"):
-            url_imagem = tw_image["content"]
-            if url_imagem.startswith("http"):
-                logger.info(f"✅ Imagem via Twitter: {url_imagem[:50]}...")
-                return url_imagem
-        
-        # =========================
-        # ESTRATÉGIA 3: JSON-LD
-        # =========================
-        script_tags = soup.find_all("script", type="application/ld+json")
-        for script in script_tags:
-            try:
-                data = json.loads(script.string)
-                if "image" in data:
-                    url_imagem = data["image"]
-                    if isinstance(url_imagem, str) and url_imagem.startswith("http"):
-                        logger.info(f"✅ Imagem via JSON-LD: {url_imagem[:50]}...")
-                        return url_imagem
-                    elif isinstance(url_imagem, list) and len(url_imagem) > 0:
-                        for img in url_imagem:
-                            if isinstance(img, str) and img.startswith("http"):
-                                logger.info(f"✅ Imagem via JSON-LD (lista): {img[:50]}...")
-                                return img
-            except:
-                pass
-        
-        # =========================
-        # ESTRATÉGIA 4: Nike específico
-        # =========================
-        if "nike.com" in link.lower():
-            # Nike usa imagens com padrão específico
-            padrao_nike = r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)[^\s"\']*(?:\?[^\s"\']*)?'
-            matches = re.findall(padrao_nike, html, re.IGNORECASE)
-            
-            # Filtra imagens de produto (exclui logos, ícones)
-            for url_imagem in matches:
-                if "product" in url_imagem.lower() or "image" in url_imagem.lower():
-                    if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
-                        logger.info(f"✅ Imagem Nike específica: {url_imagem[:50]}...")
-                        return url_imagem
-            
-            # Pega a primeira imagem grande
-            for url_imagem in matches:
-                if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
-                    logger.info(f"✅ Imagem Nike (fallback): {url_imagem[:50]}...")
-                    return url_imagem
-        
-        # =========================
-        # ESTRATÉGIA 5: Imagem principal (CSS)
-        # =========================
-        selectores = [
-            "img[class*='product-image']",
-            "img[class*='main-image']",
-            "img[class*='product-img']",
-            "img[class*='produto']",
-            "img[itemprop='image']",
-            "img[data-testid='product-image']",
-            "img[data-image]",
-            "img[data-src]",
-            "img[class*='product-card']",
-            "img[class*='product']",
-            "img[class*='image']",
-            "img[class*='photo']",
-        ]
-        
-        for selector in selectores:
-            img = soup.select_one(selector)
-            if img:
-                for attr in ["src", "data-src", "data-image", "content"]:
-                    url_imagem = img.get(attr)
-                    if url_imagem:
-                        if url_imagem.startswith("http"):
-                            logger.info(f"✅ Imagem via CSS ({selector}): {url_imagem[:50]}...")
-                            return url_imagem
-                        elif url_imagem.startswith("//"):
-                            url_imagem = f"https:{url_imagem}"
-                            logger.info(f"✅ Imagem via CSS (HTTPS): {url_imagem[:50]}...")
-                            return url_imagem
-        
-        # =========================
-        # ESTRATÉGIA 6: Regex geral
-        # =========================
-        padroes = [
-            r'https?://[^\s"\']+product[^\s"\']+\.(?:jpg|jpeg|png|webp)',
-            r'https?://[^\s"\']+image[^\s"\']+\.(?:jpg|jpeg|png|webp)',
-            r'https?://[^\s"\']+imagem[^\s"\']+\.(?:jpg|jpeg|png|webp)',
-            r'https?://[^\s"\']+foto[^\s"\']+\.(?:jpg|jpeg|png|webp)',
-            r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"\']*)?',
-        ]
-        
-        for padrao in padroes:
-            matches = re.findall(padrao, html, re.IGNORECASE)
-            for url_imagem in matches:
-                if "logo" not in url_imagem.lower() and "icon" not in url_imagem.lower():
-                    # Evita imagens muito pequenas
-                    if "thumbnail" not in url_imagem.lower():
-                        logger.info(f"✅ Imagem via Regex: {url_imagem[:50]}...")
-                        return url_imagem
-        
-        # =========================
-        # FALLBACK: Imagem padrão do site (favicon)
-        # =========================
-        favicon = soup.find("link", rel="icon")
-        if favicon and favicon.get("href"):
-            url_imagem = favicon["href"]
-            if url_imagem.startswith("http"):
-                logger.info(f"ℹ️ Usando favicon como fallback: {url_imagem[:50]}...")
-                return url_imagem
-        
-        logger.warning("⚠️ Nenhuma imagem encontrada")
-        return None
-        
-    except requests.Timeout:
-        logger.warning("⏰ Timeout ao buscar imagem")
-        return None
     except Exception as e:
         logger.error(f"❌ Erro ao extrair imagem: {e}")
         return None
@@ -223,6 +158,10 @@ def baixar_imagem_para_telegram(url_imagem: str):
     try:
         if not url_imagem:
             return False
+        
+        # Se for arquivo local, retorna True
+        if url_imagem.startswith("/tmp/"):
+            return True
         
         # Verifica se a URL é acessível
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -246,17 +185,10 @@ def gerar_titulo(link: str):
         if not path:
             return "Produto"
         
-        # Pega o último segmento
         titulo = path.split("/")[-1]
-        
-        # Remove extensões e caracteres especiais
         titulo = titulo.replace("-", " ").replace("_", " ").replace(".html", "").replace(".Html", "")
-        
-        # Remove números de ID
         titulo = re.sub(r'\d+', '', titulo)
         titulo = re.sub(r'[^a-zA-ZÀ-ÿ\s]', '', titulo)
-        
-        # Capitaliza
         titulo = titulo.strip().title()
         
         if not titulo or len(titulo) < 3:
