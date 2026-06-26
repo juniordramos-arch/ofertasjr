@@ -1,8 +1,7 @@
 import os
 import logging
-import time
-import threading
 import asyncio
+import threading
 from flask import Flask, jsonify
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
@@ -17,29 +16,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # =========================
-# IMPORTAÇÃO DOS HANDLERS
+# IMPORTAÇÕES
 # =========================
 
 try:
     from handlers import start, receive_link, button_click
-    logger.info("✅ Handlers importados com sucesso")
+    from config import BOT_TOKEN, PORT
+    logger.info("✅ Configurações carregadas com sucesso")
 except Exception as e:
-    logger.error(f"❌ Erro ao importar handlers: {e}")
+    logger.error(f"❌ Erro ao importar: {e}")
     raise
 
 # =========================
-# CONFIGURAÇÃO
-# =========================
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    logger.error("❌ BOT_TOKEN não configurado!")
-    raise ValueError("BOT_TOKEN não configurado")
-
-PORT = int(os.getenv("PORT", 10000))
-
-# =========================
-# FLASK APP
+# FLASK APP (HEALTH CHECK)
 # =========================
 
 flask_app = Flask(__name__)
@@ -49,9 +38,8 @@ def home():
     return jsonify({
         "status": "online",
         "bot": "OfertasJR Pro",
-        "version": "3.0.9",
-        "mode": "polling",
-        "python": "3.11"
+        "version": "3.1.0",
+        "mode": "polling"
     })
 
 @flask_app.route('/health')
@@ -59,18 +47,18 @@ def health():
     return jsonify({"status": "healthy"})
 
 def run_flask():
-    """Roda o servidor Flask em uma thread separada"""
+    """Roda o Flask em uma thread separada"""
     try:
-        flask_app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
+        flask_app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
     except Exception as e:
         logger.error(f"❌ Erro no Flask: {e}")
 
 # =========================
-# FUNÇÃO PRINCIPAL DO BOT (COM ASYNCIO)
+# FUNÇÃO PRINCIPAL DO BOT
 # =========================
 
-async def run_bot_async():
-    """Configura e inicia o bot de forma assíncrona"""
+async def run_bot():
+    """Inicia o bot em modo polling usando asyncio"""
     try:
         logger.info("🚀 Iniciando configuração do bot...")
         
@@ -85,13 +73,13 @@ async def run_bot_async():
         # Remove webhook
         import requests
         try:
-            api_url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
-            response = requests.post(api_url, json={"drop_pending_updates": True})
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
+            response = requests.post(url, json={"drop_pending_updates": True})
             logger.info(f"✅ Webhook removido: {response.json()}")
         except Exception as e:
             logger.warning(f"⚠️ Erro ao remover webhook: {e}")
         
-        # Inicia polling
+        # Inicia o bot
         logger.info("🚀 Bot iniciado em modo Polling. Aguardando mensagens...")
         await application.initialize()
         await application.start()
@@ -105,22 +93,12 @@ async def run_bot_async():
         logger.error(f"❌ Erro fatal no bot: {e}")
         raise
 
-def run_bot():
-    """Wrapper síncrono para rodar o bot"""
-    try:
-        asyncio.run(run_bot_async())
-    except KeyboardInterrupt:
-        logger.info("🛑 Bot interrompido pelo usuário")
-    except Exception as e:
-        logger.error(f"❌ Erro ao rodar bot: {e}")
-        raise
-
 # =========================
 # MAIN
 # =========================
 
 if __name__ == "__main__":
-    logger.info("🚀 Iniciando OfertasJR Pro v3.0.9...")
+    logger.info("🚀 Iniciando OfertasJR Pro v3.1.0...")
     
     # Inicia Flask em thread separada
     flask_thread = threading.Thread(target=run_flask, daemon=True)
@@ -128,7 +106,14 @@ if __name__ == "__main__":
     logger.info(f"✅ Flask iniciado na porta {PORT}")
     
     # Aguarda o Flask iniciar
+    import time
     time.sleep(2)
     
     # Inicia o bot
-    run_bot()
+    try:
+        asyncio.run(run_bot())
+    except KeyboardInterrupt:
+        logger.info("🛑 Bot interrompido pelo usuário")
+    except Exception as e:
+        logger.error(f"❌ Erro ao rodar bot: {e}")
+        raise
