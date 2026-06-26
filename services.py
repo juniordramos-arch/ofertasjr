@@ -7,6 +7,8 @@ import requests
 import urllib.parse
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
+from PIL import Image
+import io
 
 logger = logging.getLogger(__name__)
 
@@ -213,72 +215,63 @@ def extrair_beneficio(link: str):
     return "Produto de alta qualidade com excelente custo-benefício"
 
 # =========================
-# FUNÇÃO: BUSCAR IMAGEM NO GOOGLE (VIA SERVICO GRATUITO)
+# FUNÇÃO: BAIXAR E SALVAR IMAGEM
 # =========================
 
-def buscar_imagem_google(titulo: str):
-    """Busca a imagem do produto usando API gratuita"""
+def baixar_imagem(url_imagem: str):
+    """Baixa a imagem e salva em formato compatível com o Telegram"""
     try:
-        # Limpa o título
-        titulo_busca = titulo.replace("Tenis", "Tênis").replace("Masculino", "").replace("Feminino", "").strip()
-        query = urllib.parse.quote(f"{titulo_busca} produto")
-        
-        # Usa a API do Google Custom Search (versão gratuita)
-        # Nota: Isso requer uma chave de API do Google
-        # Como alternativa, usamos o serviço do DuckDuckGo com parâmetros otimizados
-        
-        # Estratégia 1: DuckDuckGo Images (otimizado)
-        ddg_url = f"https://duckduckgo.com/i.js?q={query}&iax=images&ia=images"
-        
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "Referer": "https://duckduckgo.com/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         
-        response = requests.get(ddg_url, headers=headers, timeout=15)
+        response = requests.get(url_imagem, headers=headers, timeout=30)
         if response.status_code == 200:
+            # Salva como arquivo temporário
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+            temp_file.write(response.content)
+            temp_file.close()
+            
+            # Verifica se é uma imagem válida
             try:
-                data = response.json()
-                if "results" in data and len(data["results"]) > 0:
-                    for resultado in data["results"]:
-                        if "image" in resultado:
-                            url_imagem = resultado["image"]
-                            if url_imagem.startswith("http"):
-                                logger.info(f"✅ Imagem via DuckDuckGo API: {url_imagem[:50]}...")
-                                return url_imagem
-            except:
-                pass
-        
-        # Estratégia 2: Fallback - Pexels API (gratuita, sem chave)
-        pexels_url = f"https://api.pexels.com/v1/search?query={query}&per_page=1"
-        # Nota: Isso requer uma chave de API do Pexels
-        # Como não temos, pulamos
-        
-        # Estratégia 3: Busca no site do produto (já tentamos e falhou)
-        
-        return None
-        
+                img = Image.open(temp_file.name)
+                img.verify()
+                logger.info(f"✅ Imagem salva e verificada: {temp_file.name}")
+                return temp_file.name
+            except Exception as e:
+                logger.error(f"❌ Imagem inválida: {e}")
+                os.remove(temp_file.name)
+                return None
+                
     except Exception as e:
-        logger.error(f"❌ Erro ao buscar imagem: {e}")
+        logger.error(f"❌ Erro ao baixar imagem: {e}")
         return None
 
 # =========================
-# FUNÇÃO: CAPTURAR IMAGEM VIA API (FALLBACK)
+# FUNÇÃO: CAPTURAR IMAGEM VIA API
 # =========================
 
 def capturar_imagem_com_api(link: str):
-    """Usa API para capturar imagem (fallback)"""
+    """Usa API para capturar imagem e salvar localmente"""
     try:
         # Page2Images
         page2images_url = f"http://api.page2images.com/directlink?p2i_device=1&p2i_screen=1024x768&p2i_size=800x600&p2i_url={link}"
         response = requests.get(page2images_url, timeout=30)
         if response.status_code == 200:
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+            # Salva a imagem
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
             temp_file.write(response.content)
             temp_file.close()
-            logger.info(f"✅ Captura de tela (Page2Images): {temp_file.name}")
-            return temp_file.name
+            
+            # Verifica a imagem
+            try:
+                img = Image.open(temp_file.name)
+                img.verify()
+                logger.info(f"✅ Captura de tela salva: {temp_file.name}")
+                return temp_file.name
+            except:
+                os.remove(temp_file.name)
+                return None
     except Exception as e:
         logger.warning(f"⚠️ Falha no Page2Images: {e}")
     
@@ -311,3 +304,46 @@ def extrair_imagem(link: str):
     beneficio = extrair_beneficio(link)
     
     return imagem, preco, beneficio
+
+# =========================
+# FUNÇÃO: BUSCAR IMAGEM NO GOOGLE
+# =========================
+
+def buscar_imagem_google(titulo: str):
+    """Busca a imagem do produto usando DuckDuckGo API"""
+    try:
+        # Limpa o título
+        titulo_busca = titulo.replace("Tenis", "Tênis").replace("Masculino", "").replace("Feminino", "").strip()
+        query = urllib.parse.quote(f"{titulo_busca} produto")
+        
+        # DuckDuckGo Images API
+        ddg_url = f"https://duckduckgo.com/i.js?q={query}&iax=images&ia=images"
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://duckduckgo.com/",
+        }
+        
+        response = requests.get(ddg_url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                if "results" in data and len(data["results"]) > 0:
+                    for resultado in data["results"]:
+                        if "image" in resultado:
+                            url_imagem = resultado["image"]
+                            if url_imagem.startswith("http"):
+                                # Baixa e salva a imagem
+                                imagem_local = baixar_imagem(url_imagem)
+                                if imagem_local:
+                                    logger.info(f"✅ Imagem via DuckDuckGo: {url_imagem[:50]}...")
+                                    return imagem_local
+            except:
+                pass
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar imagem: {e}")
+        return None
