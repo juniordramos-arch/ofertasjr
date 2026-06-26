@@ -40,7 +40,6 @@ def validar_imagem(caminho_imagem: str):
     """Verifica se a imagem é válida"""
     try:
         if not caminho_imagem or not os.path.exists(caminho_imagem):
-            logger.error(f"❌ Arquivo não existe: {caminho_imagem}")
             return False
         
         img = Image.open(caminho_imagem)
@@ -48,10 +47,8 @@ def validar_imagem(caminho_imagem: str):
         
         tamanho = os.path.getsize(caminho_imagem)
         if tamanho < 100:
-            logger.error(f"❌ Imagem muito pequena: {tamanho} bytes")
             return False
         
-        logger.info(f"✅ Imagem válida: {caminho_imagem} ({tamanho} bytes)")
         return True
         
     except Exception as e:
@@ -97,10 +94,10 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         imagem_valida = False
         if imagem and validar_imagem(imagem):
             imagem_valida = True
-            logger.info(f"✅ Imagem validada com sucesso: {imagem}")
+            logger.info(f"✅ Imagem validada: {imagem}")
         else:
             imagem = None
-            logger.warning("⚠️ Imagem inválida, será ignorada")
+            logger.warning("⚠️ Imagem inválida")
         
         ofertas[user_id] = {
             "link": link_afiliado,
@@ -166,7 +163,6 @@ async def mostrar_previa(update: Update, user_id: int, oferta: dict):
                 mensagem,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
-            await update.message.reply_text("⚠️ Não foi possível carregar a imagem do produto.")
     else:
         await update.message.reply_text(
             mensagem,
@@ -189,7 +185,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await query.edit_message_text("❌ Nenhuma oferta encontrada.")
             except:
-                await query.message.reply_text("❌ Nenhuma oferta encontrada.")
+                pass
             return
         
         try:
@@ -234,20 +230,14 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await query.edit_message_text("✅ Publicado com sucesso!")
             except:
-                try:
-                    await query.message.reply_text("✅ Publicado com sucesso!")
-                except:
-                    pass
+                pass
             
         except Exception as e:
             logger.error(f"❌ Erro ao publicar: {e}")
             try:
                 await query.edit_message_text(f"❌ Erro ao publicar: {str(e)}")
             except:
-                try:
-                    await query.message.reply_text(f"❌ Erro ao publicar: {str(e)}")
-                except:
-                    pass
+                pass
         
         ofertas.pop(user_id, None)
     
@@ -259,13 +249,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Digite apenas o código (ex: OFERTA10)"
             )
         except:
-            try:
-                await query.message.reply_text(
-                    "🎟 Envie o código do cupom:\n\n"
-                    "Digite apenas o código (ex: OFERTA10)"
-                )
-            except:
-                pass
+            pass
     
     elif query.data == "cancelar":
         ofertas.pop(user_id, None)
@@ -273,7 +257,4 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await query.edit_message_text("❌ Oferta cancelada.")
         except:
-            try:
-                await query.message.reply_text("❌ Oferta cancelada.")
-            except:
-                pass
+            pass
