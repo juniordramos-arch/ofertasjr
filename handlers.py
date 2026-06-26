@@ -42,14 +42,17 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         titulo = gerar_titulo(text)
         imagem = extrair_imagem(text)
         
+        # Remove extensões e caracteres especiais do título
+        titulo_limpo = titulo.replace(".Html", "").replace(".html", "").strip()
+        
         ofertas[user_id] = {
             "link": link_afiliado,
-            "titulo": titulo,
+            "titulo": titulo_limpo,
             "imagem": imagem,
             "cupom": ""
         }
         
-        logger.info(f"📥 Novo link de {user_id}: {titulo}")
+        logger.info(f"📥 Novo link de {user_id}: {titulo_limpo}")
         
         keyboard = [
             [InlineKeyboardButton("✅ Publicar", callback_data="publicar")],
@@ -57,15 +60,38 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")]
         ]
         
-        preview = f"🔥 **PRÉVIA DA OFERTA**\n\n"
-        preview += f"🏷 **Título:** {titulo}\n\n"
-        preview += f"📸 **Imagem:** {'✅ Encontrada' if imagem else '❌ Não encontrada'}\n\n"
-        preview += f"🔗 **Link:** {link_afiliado[:50]}..."
+        # =========================
+        # PRÉVIA - FORMATO SOLICITADO
+        # =========================
         
-        await update.message.reply_text(preview, reply_markup=InlineKeyboardMarkup(keyboard))
+        preview = f"🔥 **PRÉVIA DA OFERTA**\n\n"
+        preview += f"**{titulo_limpo}**\n\n"  # Sem a palavra "Título:"
         
         if imagem:
-            await update.message.reply_photo(imagem, caption="📸 Imagem do produto")
+            preview += f"📸 Imagem encontrada ✅\n\n"
+        else:
+            preview += f"📸 Imagem não encontrada ❌\n\n"
+        
+        preview += f"🔗 {link_afiliado[:50]}..."  # Sem a palavra "Link"
+        
+        # Envia a prévia com os botões
+        await update.message.reply_text(preview, reply_markup=InlineKeyboardMarkup(keyboard))
+        
+        # =========================
+        # ENVIA A IMAGEM SEPARADAMENTE (SE ENCONTRADA)
+        # =========================
+        
+        if imagem:
+            try:
+                # Tenta baixar e enviar a imagem
+                await update.message.reply_photo(
+                    imagem,
+                    caption=f"📸 {titulo_limpo}"
+                )
+                logger.info(f"✅ Imagem enviada para {user_id}")
+            except Exception as e:
+                logger.error(f"❌ Erro ao enviar imagem: {e}")
+                await update.message.reply_text("⚠️ Não foi possível carregar a imagem do produto.")
             
     except Exception as e:
         logger.error(f"❌ Erro ao processar link: {e}")
@@ -87,26 +113,45 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             from config import CHANNEL_ID
             
+            # =========================
+            # MENSAGEM FINAL - FORMATO SOLICITADO
+            # =========================
+            
             msg = f"🔥 **OFERTA EXCLUSIVA**\n\n"
-            msg += f"🏷 {oferta['titulo']}\n\n"
+            msg += f"**{oferta['titulo']}**\n\n"  # Sem "Título:"
             
             if oferta.get("cupom"):
                 msg += f"🎟 **Cupom:** {oferta['cupom']}\n\n"
             
-            msg += f"🔗 {oferta['link']}"
+            msg += f"🔗 {oferta['link']}"  # Sem a palavra "Link"
+            
+            # =========================
+            # ENVIA PARA O CANAL
+            # =========================
             
             if oferta.get("imagem"):
-                await context.bot.send_photo(CHANNEL_ID, oferta["imagem"], caption=msg)
+                # Envia com imagem
+                await context.bot.send_photo(
+                    CHANNEL_ID,
+                    oferta["imagem"],
+                    caption=msg
+                )
+                logger.info(f"✅ Oferta publicada com imagem por {user_id}")
             else:
-                await context.bot.send_message(CHANNEL_ID, msg)
+                # Envia só texto
+                await context.bot.send_message(
+                    CHANNEL_ID,
+                    msg
+                )
+                logger.info(f"✅ Oferta publicada sem imagem por {user_id}")
             
             await query.edit_message_text("✅ **Publicado com sucesso!**")
-            logger.info(f"✅ Oferta publicada por {user_id}")
             
         except Exception as e:
             logger.error(f"❌ Erro ao publicar: {e}")
             await query.edit_message_text(f"❌ Erro ao publicar: {str(e)}")
         
+        # Limpa cache
         ofertas.pop(user_id, None)
         
     elif query.data == "cupom":
