@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 # CRIAÇÃO DO BOT (GLOBAL)
 # =========================
 
-# IMPORTANTE: O bot é criado uma única vez
 bot_app = Application.builder().token(BOT_TOKEN).build()
 bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link))
@@ -39,9 +38,8 @@ def home():
     return jsonify({
         "status": "online",
         "bot": "OfertasJR Pro",
-        "version": "3.0.4",
-        "mode": "webhook",
-        "worker": os.getenv('WEB_CONCURRENCY', '1')
+        "version": "3.0.5",
+        "mode": "webhook"
     })
 
 @flask_app.route('/health')
@@ -58,12 +56,13 @@ def webhook():
         # Cria o objeto Update
         update = Update.de_json(json_data, bot_app.bot)
         
-        # Processa a atualização de forma síncrona
-        # Cria um novo event loop para cada requisição (thread-safe)
+        # Processa a atualização de forma síncrona usando asyncio
+        # Cria um novo loop de eventos para esta requisição
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
         try:
+            # Executa a função assíncrona de forma síncrona
             loop.run_until_complete(bot_app.process_update(update))
         finally:
             loop.close()
@@ -80,7 +79,7 @@ def webhook_get():
     return jsonify({"message": "Webhook endpoint. Use POST para enviar atualizações."})
 
 # =========================
-# CONFIGURAÇÃO DO WEBHOOK (executado apenas uma vez)
+# CONFIGURAÇÃO DO WEBHOOK
 # =========================
 
 def setup_webhook():
@@ -105,7 +104,7 @@ def setup_webhook():
         response = requests.post(api_url, json={
             "url": webhook_url,
             "drop_pending_updates": True,
-            "max_connections": 10  # Limita conexões para evitar sobrecarga
+            "max_connections": 10
         })
         
         if response.status_code == 200:
@@ -124,8 +123,5 @@ def setup_webhook():
         logger.error(f"❌ Erro na configuração do webhook: {e}")
         return False
 
-# Configuração executada APENAS no primeiro worker
-# Usamos uma variável de ambiente para evitar configuração duplicada
-if not os.getenv('WEBHOOK_CONFIGURED'):
-    setup_webhook()
-    os.environ['WEBHOOK_CONFIGURED'] = 'true'
+# Configura o webhook ao iniciar
+setup_webhook()
