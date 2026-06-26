@@ -1,7 +1,8 @@
 import logging
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from services import gerar_link_afiliado, extrair_imagem, gerar_titulo
+from services import gerar_link_afiliado, extrair_imagem, gerar_titulo, extrair_preco
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +35,20 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id in aguardando_cupom:
         ofertas[user_id]["cupom"] = text
         del aguardando_cupom[user_id]
+        
+        # Atualiza a prévia com o cupom
         await update.message.reply_text(f"✅ Cupom salvo: **{text}**")
+        
+        # Mostra a prévia atualizada
+        oferta = ofertas.get(user_id)
+        if oferta:
+            await mostrar_previa(update, user_id, oferta)
         return
     
     try:
         link_afiliado = gerar_link_afiliado(text)
         titulo = gerar_titulo(text)
-        imagem = extrair_imagem(text)
+        imagem, preco, beneficio = extrair_imagem(text)
         
         # Remove extensões e caracteres especiais do título
         titulo_limpo = titulo.replace(".Html", "").replace(".html", "").strip()
@@ -49,60 +57,92 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "link": link_afiliado,
             "titulo": titulo_limpo,
             "imagem": imagem,
+            "preco": preco,
+            "beneficio": beneficio,
             "cupom": ""
         }
         
         logger.info(f"📥 Novo link de {user_id}: {titulo_limpo}")
         
-        keyboard = [
-            [InlineKeyboardButton("✅ Publicar", callback_data="publicar")],
-            [InlineKeyboardButton("🎟 Adicionar Cupom", callback_data="cupom")],
-            [InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")]
-        ]
-        
-        # =========================
-        # PRÉVIA (texto apenas)
-        # =========================
-        preview = f"🔥 **PRÉVIA DA OFERTA**\n\n"
-        preview += f"**{titulo_limpo}**\n\n"
-        
-        if imagem:
-            preview += f"📸 Imagem encontrada ✅\n\n"
-        else:
-            preview += f"📸 Imagem NÃO encontrada ❌\n\n"
-        
-        preview += f"🔗 {link_afiliado[:50]}..."
-        
-        # =========================
-        # ENVIA A IMAGEM PRIMEIRO (se encontrada)
-        # =========================
-        if imagem:
-            try:
-                # Envia a imagem com a prévia como legenda
-                await update.message.reply_photo(
-                    imagem,
-                    caption=preview,
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
-                logger.info(f"✅ Imagem + prévia enviadas para {user_id}")
-            except Exception as e:
-                logger.error(f"❌ Erro ao enviar imagem: {e}")
-                # Fallback: envia só texto
-                await update.message.reply_text(
-                    preview,
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
-                await update.message.reply_text("⚠️ Não foi possível carregar a imagem do produto.")
-        else:
-            # Sem imagem, envia só texto
-            await update.message.reply_text(
-                preview,
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
+        # Mostra a prévia
+        await mostrar_previa(update, user_id, ofertas[user_id])
             
     except Exception as e:
         logger.error(f"❌ Erro ao processar link: {e}")
         await update.message.reply_text("❌ Erro ao processar o link. Verifique se é válido.")
+
+async def mostrar_previa(update: Update, user_id: int, oferta: dict):
+    """Mostra a prévia formatada da oferta"""
+    
+    keyboard = [
+        [InlineKeyboardButton("✅ Publicar", callback_data="publicar")],
+        [InlineKeyboardButton("🎟 Adicionar Cupom", callback_data="cupom")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")]
+    ]
+    
+    # =========================
+    # MENSAGEM FORMATADA
+    # =========================
+    mensagem = "🔥 **PRÉVIA DA OFERTA**\n\n"
+    
+    # Gancho (frase chamativa)
+    ganchos = [
+        "🏋️‍♂️ ACHADO BOM DEMAIS 😮",
+        "🔥 OFERTA IMPERDÍVEL!",
+        "💥 OPORTUNIDADE ÚNICA!",
+        "🎯 CORRE QUE É POUCO!",
+        "⚡ PROMOÇÃO RELÂMPAGO!"
+    ]
+    import random
+    mensagem += f"{random.choice(ganchos)}\n\n"
+    
+    # Título
+    mensagem += f"**{oferta['titulo']}**\n\n"
+    
+    # Preço (se disponível)
+    if oferta.get("preco"):
+        preco = oferta["preco"]
+        if "~" in preco:  # Tem desconto
+            mensagem += f"💰 **PREÇO:** {preco}\n\n"
+        else:
+            mensagem += f"💰 **Preço:** {preco}\n\n"
+    
+    # Benefício (se disponível)
+    if oferta.get("beneficio"):
+        mensagem += f"🎯 {oferta['beneficio']}\n\n"
+    
+    # Cupom (se adicionado)
+    if oferta.get("cupom"):
+        mensagem += f"🎟 **Cupom:** {oferta['cupom']}\n\n"
+    
+    # Link (sempre aparece)
+    mensagem += f"🔗 {oferta['link']}"
+    
+    # =========================
+    # ENVIA A MENSAGEM
+    # =========================
+    if oferta.get("imagem"):
+        try:
+            await update.message.reply_photo(
+                oferta["imagem"],
+                caption=mensagem,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            logger.info(f"✅ Prévia com imagem enviada para {user_id}")
+        except Exception as e:
+            logger.error(f"❌ Erro ao enviar imagem: {e}")
+            # Fallback: envia só texto
+            await update.message.reply_text(
+                mensagem,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            await update.message.reply_text("⚠️ Não foi possível carregar a imagem do produto.")
+    else:
+        # Sem imagem, envia só texto
+        await update.message.reply_text(
+            mensagem,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Processa cliques nos botões"""
@@ -120,31 +160,60 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             from config import CHANNEL_ID
             
-            msg = f"🔥 **OFERTA EXCLUSIVA**\n\n"
-            msg += f"**{oferta['titulo']}**\n\n"
+            # =========================
+            # MENSAGEM FINAL
+            # =========================
+            mensagem = "🏋️‍♂️ **ACHADO BOM DEMAIS** 😮\n\n"
             
+            # Gancho
+            ganchos = [
+                "🏋️‍♂️ ACHADO BOM DEMAIS 😮",
+                "🔥 OFERTA IMPERDÍVEL!",
+                "💥 OPORTUNIDADE ÚNICA!",
+                "🎯 CORRE QUE É POUCO!",
+                "⚡ PROMOÇÃO RELÂMPAGO!"
+            ]
+            import random
+            mensagem = f"{random.choice(ganchos)}\n\n"
+            
+            # Título
+            mensagem += f"**{oferta['titulo']}**\n\n"
+            
+            # Preço (se disponível)
+            if oferta.get("preco"):
+                preco = oferta["preco"]
+                if "~" in preco:  # Tem desconto
+                    mensagem += f"💰 **PREÇO:** {preco}\n\n"
+                else:
+                    mensagem += f"💰 **Preço:** {preco}\n\n"
+            
+            # Benefício (se disponível)
+            if oferta.get("beneficio"):
+                mensagem += f"🎯 {oferta['beneficio']}\n\n"
+            
+            # Cupom (se adicionado)
             if oferta.get("cupom"):
-                msg += f"🎟 **Cupom:** {oferta['cupom']}\n\n"
+                mensagem += f"🎟 **Cupom:** {oferta['cupom']}\n\n"
             
-            msg += f"🔗 {oferta['link']}"
+            # Link
+            mensagem += f"🔗 {oferta['link']}"
             
             # =========================
-            # ENVIA PARA O CANAL (imagem PRIMEIRO)
+            # ENVIA PARA O CANAL
             # =========================
             if oferta.get("imagem"):
                 try:
                     await context.bot.send_photo(
                         CHANNEL_ID,
                         oferta["imagem"],
-                        caption=msg
+                        caption=mensagem
                     )
                     logger.info(f"✅ Oferta publicada com imagem por {user_id}")
                 except Exception as e:
                     logger.error(f"❌ Erro ao enviar imagem: {e}")
-                    # Fallback: envia só texto
-                    await context.bot.send_message(CHANNEL_ID, msg)
+                    await context.bot.send_message(CHANNEL_ID, mensagem)
             else:
-                await context.bot.send_message(CHANNEL_ID, msg)
+                await context.bot.send_message(CHANNEL_ID, mensagem)
                 logger.info(f"✅ Oferta publicada sem imagem por {user_id}")
             
             await query.edit_message_text("✅ **Publicado com sucesso!**")
@@ -157,7 +226,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     elif query.data == "cupom":
         aguardando_cupom[user_id] = True
-        await query.edit_message_text("🎟 **Envie o código do cupom:**")
+        await query.edit_message_text("🎟 **Envie o código do cupom:**\n\nDigite apenas o código (ex: OFERTA10)")
         
     elif query.data == "cancelar":
         ofertas.pop(user_id, None)
