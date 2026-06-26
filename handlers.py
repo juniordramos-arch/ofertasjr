@@ -40,8 +40,9 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         link_afiliado = gerar_link_afiliado(text)
         titulo = gerar_titulo(text)
-        imagem = extrair_imagem(text)  # SEMPRE retorna uma URL ou None
+        imagem = extrair_imagem(text)
         
+        # Remove extensões e caracteres especiais do título
         titulo_limpo = titulo.replace(".Html", "").replace(".html", "").strip()
         
         ofertas[user_id] = {
@@ -60,7 +61,7 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         
         # =========================
-        # PRÉVIA
+        # PRÉVIA (texto apenas)
         # =========================
         preview = f"🔥 **PRÉVIA DA OFERTA**\n\n"
         preview += f"**{titulo_limpo}**\n\n"
@@ -72,23 +73,32 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         preview += f"🔗 {link_afiliado[:50]}..."
         
-        await update.message.reply_text(preview, reply_markup=InlineKeyboardMarkup(keyboard))
-        
         # =========================
-        # ENVIA A IMAGEM (se encontrada)
+        # ENVIA A IMAGEM PRIMEIRO (se encontrada)
         # =========================
         if imagem:
             try:
+                # Envia a imagem com a prévia como legenda
                 await update.message.reply_photo(
                     imagem,
-                    caption=f"📸 {titulo_limpo}"
+                    caption=preview,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
                 )
-                logger.info(f"✅ Imagem enviada para {user_id}")
+                logger.info(f"✅ Imagem + prévia enviadas para {user_id}")
             except Exception as e:
                 logger.error(f"❌ Erro ao enviar imagem: {e}")
-                await update.message.reply_text("⚠️ Não foi possível carregar a imagem.")
+                # Fallback: envia só texto
+                await update.message.reply_text(
+                    preview,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                await update.message.reply_text("⚠️ Não foi possível carregar a imagem do produto.")
         else:
-            await update.message.reply_text("⚠️ Nenhuma imagem encontrada para este produto.")
+            # Sem imagem, envia só texto
+            await update.message.reply_text(
+                preview,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
             
     except Exception as e:
         logger.error(f"❌ Erro ao processar link: {e}")
@@ -119,20 +129,22 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f"🔗 {oferta['link']}"
             
             # =========================
-            # ENVIA PARA O CANAL
+            # ENVIA PARA O CANAL (imagem PRIMEIRO)
             # =========================
             if oferta.get("imagem"):
-                await context.bot.send_photo(
-                    CHANNEL_ID,
-                    oferta["imagem"],
-                    caption=msg
-                )
-                logger.info(f"✅ Oferta publicada com imagem por {user_id}")
+                try:
+                    await context.bot.send_photo(
+                        CHANNEL_ID,
+                        oferta["imagem"],
+                        caption=msg
+                    )
+                    logger.info(f"✅ Oferta publicada com imagem por {user_id}")
+                except Exception as e:
+                    logger.error(f"❌ Erro ao enviar imagem: {e}")
+                    # Fallback: envia só texto
+                    await context.bot.send_message(CHANNEL_ID, msg)
             else:
-                await context.bot.send_message(
-                    CHANNEL_ID,
-                    msg
-                )
+                await context.bot.send_message(CHANNEL_ID, msg)
                 logger.info(f"✅ Oferta publicada sem imagem por {user_id}")
             
             await query.edit_message_text("✅ **Publicado com sucesso!**")
