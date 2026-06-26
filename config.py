@@ -30,8 +30,12 @@ if not AWIN_PUBLISHER_ID:
 
 PORT = os.getenv("PORT", "10000")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-if not WEBHOOK_URL and os.getenv("ENV") != "development":
-    raise ValueError("❌ WEBHOOK_URL obrigatório em produção!")
+
+# Se WEBHOOK_URL não estiver definido, usa o nome do serviço no Render
+if not WEBHOOK_URL:
+    service_name = os.getenv("RENDER_SERVICE_NAME", "ofertasjr")
+    WEBHOOK_URL = f"https://{service_name}.onrender.com"
+    print(f"🌐 WEBHOOK_URL definido automaticamente: {WEBHOOK_URL}")
 
 # =========================
 # CONFIGURAÇÕES DO SISTEMA
@@ -39,7 +43,7 @@ if not WEBHOOK_URL and os.getenv("ENV") != "development":
 
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "20"))
 IMAGE_TIMEOUT = int(os.getenv("IMAGE_TIMEOUT", "15"))
-MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB (limite do Telegram)
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
 
 # =========================
 # MAPEAMENTO AWIN
@@ -71,6 +75,6 @@ print(f"   BOT_TOKEN: {'OK' if BOT_TOKEN else '❌'}")
 print(f"   CHANNEL_ID: {'OK' if CHANNEL_ID else '❌'}")
 print(f"   AWIN_API_TOKEN: {'OK' if AWIN_API_TOKEN else '❌'}")
 print(f"   AWIN_PUBLISHER_ID: {'OK' if AWIN_PUBLISHER_ID else '❌'}")
-print(f"   WEBHOOK_URL: {WEBHOOK_URL if WEBHOOK_URL else '❌'}")
+print(f"   WEBHOOK_URL: {WEBHOOK_URL}")
 print(f"   PORT: {PORT}")
 print("=" * 50)
