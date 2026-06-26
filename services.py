@@ -114,33 +114,7 @@ def gerar_titulo(link: str):
 # =========================
 
 def extrair_preco(link: str):
-    """Extrai preço usando múltiplas estratégias"""
-    
-    # Estratégia 1: DuckDuckGo
-    try:
-        encoded_link = urllib.parse.quote(link)
-        api_url = f"https://api.duckduckgo.com/?q=price+{encoded_link}&format=json"
-        response = requests.get(api_url, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            if "AbstractText" in data:
-                texto = data["AbstractText"]
-                padroes = [
-                    r'R\$\s*[\d.,]+',
-                    r'\d+[\.,]\d{2}',
-                ]
-                for padrao in padroes:
-                    match = re.search(padrao, texto)
-                    if match:
-                        preco = match.group(0)
-                        if not preco.startswith("R$"):
-                            preco = f"R$ {preco}"
-                        logger.info(f"💰 Preço: {preco}")
-                        return preco
-    except Exception as e:
-        logger.warning(f"⚠️ Falha na API DuckDuckGo: {e}")
-    
-    # Estratégia 2: Fallback por domínio
+    """Extrai preço usando fallback por domínio"""
     try:
         dominio = urlparse(link).netloc.replace("www.", "").split(".")[0].lower()
         precos_fallback = {
@@ -170,26 +144,7 @@ def extrair_preco(link: str):
 # =========================
 
 def extrair_beneficio(link: str):
-    """Extrai benefício usando múltiplas estratégias"""
-    
-    # Estratégia 1: DuckDuckGo
-    try:
-        encoded_link = urllib.parse.quote(link)
-        api_url = f"https://api.duckduckgo.com/?q={encoded_link}&format=json"
-        response = requests.get(api_url, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            if "AbstractText" in data:
-                texto = data["AbstractText"]
-                if texto:
-                    beneficio = " ".join(texto.split()[:15])
-                    if len(beneficio) > 20:
-                        logger.info(f"🎯 Benefício: {beneficio[:50]}...")
-                        return beneficio
-    except Exception as e:
-        logger.warning(f"⚠️ Falha na API DuckDuckGo: {e}")
-    
-    # Estratégia 2: Fallback por domínio
+    """Extrai benefício usando fallback por domínio"""
     try:
         dominio = urlparse(link).netloc.replace("www.", "").split(".")[0].lower()
         beneficios_fallback = {
@@ -215,75 +170,123 @@ def extrair_beneficio(link: str):
     return "Produto de alta qualidade com excelente custo-benefício"
 
 # =========================
-# FUNÇÃO: CONVERTER IMAGEM PARA JPEG
+# FUNÇÃO: BUSCAR IMAGEM NO BING (GRATUITO)
 # =========================
 
-def converter_para_jpeg(arquivo_entrada: str):
-    """Converte qualquer imagem para JPEG (compatível com Telegram)"""
+def buscar_imagem_bing(titulo: str):
+    """Busca imagem no Bing Images (gratuito, sem chave)"""
     try:
-        # Abre a imagem
-        img = Image.open(arquivo_entrada)
+        # Limpa o título
+        titulo_busca = titulo.replace("Tenis", "Tênis").replace("Masculino", "").replace("Feminino", "").strip()
+        query = urllib.parse.quote(f"{titulo_busca} produto")
         
-        # Converte para RGB (se for PNG com transparência)
-        if img.mode in ('RGBA', 'LA', 'P'):
-            img = img.convert('RGB')
+        # API do Bing (gratuita)
+        bing_url = f"https://www.bing.com/images/search?q={query}&form=HDRSC3"
         
-        # Salva como JPEG
-        arquivo_saida = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-        img.save(arquivo_saida.name, 'JPEG', quality=85, optimize=True)
-        arquivo_saida.close()
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        }
         
-        logger.info(f"✅ Imagem convertida para JPEG: {arquivo_saida.name}")
-        return arquivo_saida.name
+        response = requests.get(bing_url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            # Busca imagens no Bing
+            # O Bing usa imagens com classe "mimg"
+            imagens = soup.find_all("img", {"class": "mimg"})
+            for img in imagens:
+                src = img.get("src")
+                if src and src.startswith("https") and "logo" not in src.lower():
+                    # Baixa a imagem
+                    img_response = requests.get(src, headers=headers, timeout=15)
+                    if img_response.status_code == 200:
+                        # Salva a imagem
+                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+                        temp_file.write(img_response.content)
+                        temp_file.close()
+                        
+                        # Verifica se é uma imagem válida
+                        try:
+                            img_verify = Image.open(temp_file.name)
+                            img_verify.verify()
+                            logger.info(f"✅ Imagem via Bing: {src[:50]}...")
+                            return temp_file.name
+                        except:
+                            os.remove(temp_file.name)
+                            continue
+            
+            # Fallback: tenta outro seletor
+            imagens = soup.find_all("img", {"class": "img_cont"})
+            for img in imagens:
+                src = img.get("src")
+                if src and src.startswith("https") and "logo" not in src.lower():
+                    img_response = requests.get(src, headers=headers, timeout=15)
+                    if img_response.status_code == 200:
+                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+                        temp_file.write(img_response.content)
+                        temp_file.close()
+                        try:
+                            img_verify = Image.open(temp_file.name)
+                            img_verify.verify()
+                            logger.info(f"✅ Imagem via Bing (fallback): {src[:50]}...")
+                            return temp_file.name
+                        except:
+                            os.remove(temp_file.name)
+                            continue
+        
+        return None
         
     except Exception as e:
-        logger.error(f"❌ Erro ao converter imagem: {e}")
+        logger.error(f"❌ Erro ao buscar imagem no Bing: {e}")
         return None
 
 # =========================
-# FUNÇÃO: CAPTURAR IMAGEM VIA API
+# FUNÇÃO: BUSCAR IMAGEM NO WIKIMEDIA (FALLBACK)
 # =========================
 
-def capturar_imagem_com_api(link: str):
-    """Usa API para capturar imagem e salvar localmente"""
+def buscar_imagem_wikimedia(titulo: str):
+    """Busca imagem no Wikimedia Commons (gratuito)"""
     try:
-        # Page2Images
-        page2images_url = f"http://api.page2images.com/directlink?p2i_device=1&p2i_screen=1024x768&p2i_size=800x600&p2i_url={link}"
-        response = requests.get(page2images_url, timeout=30)
+        query = urllib.parse.quote(titulo)
+        wikimedia_url = f"https://commons.wikimedia.org/w/api.php?action=query&list=search&srsearch={query}&format=json"
+        
+        response = requests.get(wikimedia_url, timeout=15)
         if response.status_code == 200:
-            # Salva a imagem
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-            temp_file.write(response.content)
-            temp_file.close()
-            
-            # Converte para JPEG (garante compatibilidade)
-            imagem_convertida = converter_para_jpeg(temp_file.name)
-            if imagem_convertida:
-                # Remove o arquivo original
-                try:
-                    os.remove(temp_file.name)
-                except:
-                    pass
-                logger.info(f"✅ Captura de tela convertida: {imagem_convertida}")
-                return imagem_convertida
-            else:
-                return temp_file.name
+            data = response.json()
+            if "query" in data and "search" in data["query"]:
+                for resultado in data["query"]["search"]:
+                    titulo_imagem = resultado["title"]
+                    # Pega a URL da imagem
+                    image_url = f"https://commons.wikimedia.org/wiki/Special:FilePath/{titulo_imagem}"
+                    return image_url
+        
+        return None
+        
     except Exception as e:
-        logger.warning(f"⚠️ Falha no Page2Images: {e}")
-    
-    return None
+        logger.error(f"❌ Erro ao buscar imagem no Wikimedia: {e}")
+        return None
 
 # =========================
 # FUNÇÃO: EXTRAIR IMAGEM (PRINCIPAL)
 # =========================
 
 def extrair_imagem(link: str):
-    """Extrai imagem do produto (prioridade: captura de tela, fallback: None)"""
+    """Extrai imagem do produto (prioridade: Bing, fallback: None)"""
     
-    # 1. Tenta captura de tela via API
-    imagem = capturar_imagem_com_api(link)
+    # Gera o título para busca
+    titulo = gerar_titulo(link)
     
-    # 2. Se ainda falhou, retorna None
+    # 1. Tenta buscar a imagem no Bing
+    imagem = buscar_imagem_bing(titulo)
+    
+    # 2. Se falhou, tenta Wikimedia
+    if not imagem:
+        logger.info("🔄 Bing falhou, tentando Wikimedia...")
+        imagem = buscar_imagem_wikimedia(titulo)
+    
+    # 3. Se ainda falhou, retorna None
     if not imagem:
         logger.error("❌ Nenhuma imagem encontrada")
     
