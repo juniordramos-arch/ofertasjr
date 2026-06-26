@@ -213,54 +213,54 @@ def extrair_beneficio(link: str):
     return "Produto de alta qualidade com excelente custo-benefício"
 
 # =========================
-# FUNÇÃO: BUSCAR IMAGEM NO GOOGLE IMAGES
+# FUNÇÃO: BUSCAR IMAGEM NO GOOGLE (VIA SERVICO GRATUITO)
 # =========================
 
 def buscar_imagem_google(titulo: str):
-    """Busca a imagem do produto no Google Images usando o título"""
+    """Busca a imagem do produto usando API gratuita"""
     try:
-        # Limpa o título para busca
-        titulo_busca = titulo.replace("Tenis", "Tênis").replace("Masculino", "").strip()
+        # Limpa o título
+        titulo_busca = titulo.replace("Tenis", "Tênis").replace("Masculino", "").replace("Feminino", "").strip()
         query = urllib.parse.quote(f"{titulo_busca} produto")
         
-        # Usa a API do Google (via serviço gratuito)
-        google_url = f"https://serpapi.com/search?q={query}&tbm=isch&api_key=YOUR_API_KEY"
+        # Usa a API do Google Custom Search (versão gratuita)
+        # Nota: Isso requer uma chave de API do Google
+        # Como alternativa, usamos o serviço do DuckDuckGo com parâmetros otimizados
         
-        # Como não temos chave da SerpAPI, vamos usar uma abordagem alternativa
-        # Usamos o serviço do Google Custom Search (gratuito)
-        cse_url = f"https://cse.google.com/cse?q={query}"
-        
-        # Tenta usar o DuckDuckGo Image Search (gratuito)
-        ddg_url = f"https://duckduckgo.com/?q={query}&iax=images&ia=images"
+        # Estratégia 1: DuckDuckGo Images (otimizado)
+        ddg_url = f"https://duckduckgo.com/i.js?q={query}&iax=images&ia=images"
         
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://duckduckgo.com/",
         }
         
         response = requests.get(ddg_url, headers=headers, timeout=15)
         if response.status_code == 200:
-            soup = BeautifulSoup(response.text, "html.parser")
-            
-            # Procura imagens nos resultados
-            imagens = soup.find_all("img", {"class": "tile--img__img"})
-            for img in imagens:
-                src = img.get("src")
-                if src and src.startswith("http") and "logo" not in src.lower():
-                    logger.info(f"✅ Imagem via DuckDuckGo: {src[:50]}...")
-                    return src
-            
-            # Tenta outro seletor
-            imagens = soup.select("img[data-src]")
-            for img in imagens:
-                src = img.get("data-src")
-                if src and src.startswith("http") and "logo" not in src.lower():
-                    logger.info(f"✅ Imagem via DuckDuckGo (data-src): {src[:50]}...")
-                    return src
+            try:
+                data = response.json()
+                if "results" in data and len(data["results"]) > 0:
+                    for resultado in data["results"]:
+                        if "image" in resultado:
+                            url_imagem = resultado["image"]
+                            if url_imagem.startswith("http"):
+                                logger.info(f"✅ Imagem via DuckDuckGo API: {url_imagem[:50]}...")
+                                return url_imagem
+            except:
+                pass
+        
+        # Estratégia 2: Fallback - Pexels API (gratuita, sem chave)
+        pexels_url = f"https://api.pexels.com/v1/search?query={query}&per_page=1"
+        # Nota: Isso requer uma chave de API do Pexels
+        # Como não temos, pulamos
+        
+        # Estratégia 3: Busca no site do produto (já tentamos e falhou)
         
         return None
         
     except Exception as e:
-        logger.error(f"❌ Erro ao buscar imagem no Google: {e}")
+        logger.error(f"❌ Erro ao buscar imagem: {e}")
         return None
 
 # =========================
@@ -270,6 +270,7 @@ def buscar_imagem_google(titulo: str):
 def capturar_imagem_com_api(link: str):
     """Usa API para capturar imagem (fallback)"""
     try:
+        # Page2Images
         page2images_url = f"http://api.page2images.com/directlink?p2i_device=1&p2i_screen=1024x768&p2i_size=800x600&p2i_url={link}"
         response = requests.get(page2images_url, timeout=30)
         if response.status_code == 200:
