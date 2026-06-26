@@ -1,9 +1,11 @@
 import os
 import logging
-import asyncio
 import threading
+import time
 from flask import Flask, jsonify
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+from config import BOT_TOKEN
+from handlers import start, ajuda, cancelar, handle_message, button_click
 
 # =========================
 # CONFIGURAÇÃO DE LOGS
@@ -16,19 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # =========================
-# IMPORTAÇÕES
-# =========================
-
-try:
-    from handlers import start, receive_link, button_click
-    from config import BOT_TOKEN, PORT
-    logger.info("✅ Configurações carregadas com sucesso")
-except Exception as e:
-    logger.error(f"❌ Erro ao importar: {e}")
-    raise
-
-# =========================
-# FLASK APP (HEALTH CHECK)
+# FLASK APP
 # =========================
 
 flask_app = Flask(__name__)
@@ -37,83 +27,63 @@ flask_app = Flask(__name__)
 def home():
     return jsonify({
         "status": "online",
-        "bot": "OfertasJR Pro",
-        "version": "3.1.0",
-        "mode": "polling"
+        "bot": "OfertasJR Pro - Repost",
+        "version": "4.1.0",
+        "mode": "repost com conversão de links"
     })
 
 @flask_app.route('/health')
 def health():
     return jsonify({"status": "healthy"})
 
-def run_flask():
-    """Roda o Flask em uma thread separada"""
-    try:
-        flask_app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
-    except Exception as e:
-        logger.error(f"❌ Erro no Flask: {e}")
-
 # =========================
-# FUNÇÃO PRINCIPAL DO BOT
+# CONFIGURAÇÃO DO BOT
 # =========================
 
-async def run_bot():
-    """Inicia o bot em modo polling usando asyncio"""
-    try:
-        logger.info("🚀 Iniciando configuração do bot...")
-        
-        # Cria a aplicação
-        application = Application.builder().token(BOT_TOKEN).build()
-        
-        # Adiciona handlers
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link))
-        application.add_handler(CallbackQueryHandler(button_click))
-        
-        # Remove webhook
-        import requests
-        try:
-            url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
-            response = requests.post(url, json={"drop_pending_updates": True})
-            logger.info(f"✅ Webhook removido: {response.json()}")
-        except Exception as e:
-            logger.warning(f"⚠️ Erro ao remover webhook: {e}")
-        
-        # Inicia o bot
-        logger.info("🚀 Bot iniciado em modo Polling. Aguardando mensagens...")
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
-        
-        # Mantém o bot rodando
-        while True:
-            await asyncio.sleep(1)
-            
-    except Exception as e:
-        logger.error(f"❌ Erro fatal no bot: {e}")
-        raise
+def setup_bot():
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # Comandos
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("ajuda", ajuda))
+    application.add_handler(CommandHandler("cancelar", cancelar))
+    
+    # Handlers
+    application.add_handler(MessageHandler(filters.PHOTO, handle_message))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(CallbackQueryHandler(button_click))
+    
+    return application
 
 # =========================
 # MAIN
 # =========================
 
 if __name__ == "__main__":
-    logger.info("🚀 Iniciando OfertasJR Pro v3.1.0...")
+    logger.info("🚀 Iniciando OfertasJR Pro v4.1.0 (Repost com conversão)...")
     
-    # Inicia Flask em thread separada
+    # Inicia Flask
+    port = int(os.getenv("PORT", 10000))
+    
+    def run_flask():
+        flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    logger.info(f"✅ Flask iniciado na porta {PORT}")
-    
-    # Aguarda o Flask iniciar
-    import time
     time.sleep(2)
+    logger.info(f"✅ Flask iniciado na porta {port}")
     
     # Inicia o bot
+    bot_app = setup_bot()
+    
+    # Remove webhook
+    import requests
     try:
-        asyncio.run(run_bot())
-    except KeyboardInterrupt:
-        logger.info("🛑 Bot interrompido pelo usuário")
+        api_url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
+        response = requests.post(api_url, json={"drop_pending_updates": True})
+        logger.info(f"✅ Webhook removido: {response.json()}")
     except Exception as e:
-        logger.error(f"❌ Erro ao rodar bot: {e}")
-        raise
+        logger.warning(f"⚠️ Erro ao remover webhook: {e}")
+    
+    logger.info("🚀 Bot iniciado. Aguardando ofertas para converter e publicar...")
+    bot_app.run_polling()
